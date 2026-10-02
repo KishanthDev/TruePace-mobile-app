@@ -42,6 +42,22 @@ export default function RunHudScreen() {
     gpsAccuracyMeters,
   } = telemetry;
 
+  const getGpsStatus = () => {
+    if (gpsAccuracyMeters === null) {
+      return { label: 'ACQUIRING...', color: 'bg-amber-400', textColor: 'text-amber-400' };
+    }
+    const acc = Math.round(gpsAccuracyMeters);
+    if (acc <= 15) {
+      return { label: `LOCK ±${acc}m`, color: 'bg-emerald-400', textColor: 'text-emerald-400' };
+    }
+    if (acc <= 25) {
+      return { label: `GOOD ±${acc}m`, color: 'bg-lime-400', textColor: 'text-lime-400' };
+    }
+    return { label: `WEAK ±${acc}m`, color: 'bg-amber-400', textColor: 'text-amber-400' };
+  };
+
+  const gpsStatus = getGpsStatus();
+
   return (
     <View
       style={{
@@ -57,15 +73,9 @@ export default function RunHudScreen() {
             <Text className="text-sm font-extrabold tracking-widest text-white uppercase">
               TRUEPACE
             </Text>
-            <View
-              className={`w-2 h-2 rounded-full ml-2 ${
-                isGpsAccurate ? 'bg-emerald-400' : 'bg-amber-400'
-              }`}
-            />
-            <Text className="text-[11px] font-semibold text-zinc-500 uppercase ml-1">
-              {isGpsAccurate
-                ? `GPS ±${Math.round(gpsAccuracyMeters ?? 0)}m`
-                : 'GPS ACQUIRING'}
+            <View className={`w-2 h-2 rounded-full ml-2 ${gpsStatus.color}`} />
+            <Text className={`text-[11px] font-bold uppercase ml-1 ${gpsStatus.textColor}`}>
+              {gpsStatus.label}
             </Text>
           </View>
 

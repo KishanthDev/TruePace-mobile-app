@@ -1,7 +1,8 @@
 import { GpsCoordinate } from '../types/tracking';
 
 const EARTH_RADIUS_METERS = 6371000;
-export const GPS_ACCURACY_THRESHOLD_METERS = 15; // Max acceptable GPS error
+export const GPS_ACCURACY_THRESHOLD_METERS = 25; // Max acceptable GPS error for tracking
+export const GPS_OPTIMAL_LOCK_METERS = 15; // Optimal precision lock threshold
 export const MIN_SPEED_THRESHOLD_MPS = 0.5; // 0.5 m/s (~1.8 km/h) stationary cutoff
 export const MIN_DISTANCE_DELTA_METERS = 2.0; // Ignore tiny coordinate oscillations
 

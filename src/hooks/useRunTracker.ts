@@ -45,37 +45,6 @@ export function useRunTracker() {
   const locationSubscriptionRef = useRef<Location.LocationSubscription | null>(null);
   const timerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Check initial location permission
-  useEffect(() => {
-    (async () => {
-      try {
-        const { status: permStatus } = await Location.getForegroundPermissionsAsync();
-        setHasPermission(permStatus === 'granted');
-      } catch (err) {
-        console.warn('Error checking location permission:', err);
-        setHasPermission(false);
-      }
-    })();
-
-    return () => {
-      stopGpsWatch();
-      stopTimer();
-    };
-  }, []);
-
-  const requestPermission = async (): Promise<boolean> => {
-    try {
-      const { status: permStatus } = await Location.requestForegroundPermissionsAsync();
-      const granted = permStatus === 'granted';
-      setHasPermission(granted);
-      return granted;
-    } catch (err) {
-      console.warn('Error requesting location permission:', err);
-      setHasPermission(false);
-      return false;
-    }
-  };
-
   const stopTimer = () => {
     if (timerIntervalRef.current) {
       clearInterval(timerIntervalRef.current);
@@ -215,8 +184,8 @@ export function useRunTracker() {
     lastValidCoordRef.current = coord;
   }, []);
 
-  const startGpsWatch = async () => {
-    stopGpsWatch();
+  const startGpsWatch = useCallback(async () => {
+    if (locationSubscriptionRef.current) return;
     try {
       const subscription = await Location.watchPositionAsync(
         {
@@ -230,6 +199,48 @@ export function useRunTracker() {
     } catch (err) {
       console.warn('Error starting location watch:', err);
     }
+  }, [handleLocationUpdate]);
+
+  // Check initial location permission and pre-warm GPS
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        const { status: permStatus } = await Location.getForegroundPermissionsAsync();
+        if (isMounted) {
+          const granted = permStatus === 'granted';
+          setHasPermission(granted);
+          if (granted) {
+            await startGpsWatch();
+          }
+        }
+      } catch (err) {
+        console.warn('Error checking location permission:', err);
+        if (isMounted) setHasPermission(false);
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+      stopGpsWatch();
+      stopTimer();
+    };
+  }, [startGpsWatch]);
+
+  const requestPermission = async (): Promise<boolean> => {
+    try {
+      const { status: permStatus } = await Location.requestForegroundPermissionsAsync();
+      const granted = permStatus === 'granted';
+      setHasPermission(granted);
+      if (granted) {
+        await startGpsWatch();
+      }
+      return granted;
+    } catch (err) {
+      console.warn('Error requesting location permission:', err);
+      setHasPermission(false);
+      return false;
+    }
   };
 
   const startRun = async () => {
@@ -238,6 +249,9 @@ export function useRunTracker() {
       perm = await requestPermission();
       if (!perm) return;
     }
+
+    // Ensure GPS watch is running
+    await startGpsWatch();
 
     // Reset session metrics
     accumulatedDistanceRef.current = 0;
@@ -259,7 +273,6 @@ export function useRunTracker() {
     setStatus('tracking');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
     startTimer();
-    await startGpsWatch();
   };
 
   const pauseRun = () => {
@@ -276,7 +289,6 @@ export function useRunTracker() {
 
   const finishRun = async (): Promise<RunSummary | null> => {
     stopTimer();
-    stopGpsWatch();
 
     const endTime = Date.now();
     const finalDistance = accumulatedDistanceRef.current;
@@ -307,7 +319,6 @@ export function useRunTracker() {
 
   const resetRun = () => {
     stopTimer();
-    stopGpsWatch();
     setStatus('idle');
     setElapsedSeconds(0);
     setDistanceMeters(0);
