@@ -1,11 +1,12 @@
 import '../../global.css';
 import { Stack } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
+import { StatusBar } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 export default function RootLayout() {
   return (
-    <>
-      <StatusBar style="light" />
+    <SafeAreaProvider>
+      <StatusBar barStyle="light-content" backgroundColor="#000000" />
       <Stack
         screenOptions={{
           headerShown: false,
@@ -13,6 +14,6 @@ export default function RootLayout() {
           animation: 'fade',
         }}
       />
-    </>
+    </SafeAreaProvider>
   );
 }

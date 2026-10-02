@@ -5,8 +5,8 @@ import {
   Text,
   FlatList,
   TouchableOpacity,
-  SafeAreaView,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RunSummary } from '../types/tracking';
 import { getRunHistory, clearRunHistory } from '../utils/storage';
 import { formatDistanceKm, formatDuration, formatPace } from '../utils/geo';
@@ -20,6 +20,7 @@ export const RunHistoryModal: React.FC<RunHistoryModalProps> = ({
   visible,
   onClose,
 }) => {
+  const insets = useSafeAreaInsets();
   const [runs, setRuns] = useState<RunSummary[]>([]);
 
   const loadHistory = async () => {
@@ -50,8 +51,14 @@ export const RunHistoryModal: React.FC<RunHistoryModalProps> = ({
 
   return (
     <Modal visible={visible} animationType="slide" transparent={false}>
-      <SafeAreaView className="flex-1 bg-black">
-        <View className="flex-1 px-5 pt-4">
+      <View
+        style={{
+          paddingTop: Math.max(insets.top, 20),
+          paddingBottom: Math.max(insets.bottom, 16),
+        }}
+        className="flex-1 bg-black"
+      >
+        <View className="flex-1 px-5 pt-2">
           {/* Header */}
           <View className="flex-row items-center justify-between pb-4 border-b border-zinc-800">
             <Text className="text-xl font-bold tracking-wider text-white uppercase">
@@ -136,7 +143,7 @@ export const RunHistoryModal: React.FC<RunHistoryModalProps> = ({
             </View>
           )}
         </View>
-      </SafeAreaView>
+      </View>
     </Modal>
   );
 };

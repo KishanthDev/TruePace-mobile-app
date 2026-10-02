@@ -2,10 +2,10 @@ import React, { useState } from 'react';
 import {
   View,
   Text,
-  SafeAreaView,
   TouchableOpacity,
   ScrollView,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRunTracker } from '../hooks/useRunTracker';
 import { MetricTile } from '../components/MetricTile';
 import { ControlButton } from '../components/ControlButton';
@@ -17,6 +17,7 @@ import {
 } from '../utils/geo';
 
 export default function RunHudScreen() {
+  const insets = useSafeAreaInsets();
   const {
     telemetry,
     hasPermission,
@@ -42,8 +43,14 @@ export default function RunHudScreen() {
   } = telemetry;
 
   return (
-    <SafeAreaView className="flex-1 bg-black">
-      <View className="flex-1 px-6 pt-4 pb-8 justify-between">
+    <View
+      style={{
+        paddingTop: Math.max(insets.top, 20),
+        paddingBottom: Math.max(insets.bottom, 16),
+      }}
+      className="flex-1 bg-black"
+    >
+      <View className="flex-1 px-6 pt-2 pb-6 justify-between">
         {/* Top Header / Precision Telemetry Status */}
         <View className="flex-row items-center justify-between pb-3 border-b border-zinc-900">
           <View className="flex-row items-center space-x-2">
@@ -252,6 +259,6 @@ export default function RunHudScreen() {
         visible={historyVisible}
         onClose={() => setHistoryVisible(false)}
       />
-    </SafeAreaView>
+    </View>
   );
 }
