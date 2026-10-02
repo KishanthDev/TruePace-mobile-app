@@ -9,12 +9,14 @@
     "userInterfaceStyle": "dark",
     "ios": {
       "supportsTablet": false,
+      "bundleIdentifier": "com.truepace.app",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "TruePace needs access to your location to accurately calculate your running distance and pace.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "TruePace tracks your running workout accurately while your phone is with you."
       }
     },
     "android": {
+      "package": "com.truepace.app",
       "adaptiveIcon": {
         "backgroundColor": "#000000",
         "foregroundImage": "./assets/android-icon-foreground.png",
