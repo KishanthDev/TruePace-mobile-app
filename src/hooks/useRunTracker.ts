@@ -3,6 +3,7 @@ import * as Location from 'expo-location';
 import * as Haptics from 'expo-haptics';
 import {
   GpsCoordinate,
+  GpsIssueReason,
   RunStatus,
   RunSummary,
   TrackingTelemetry,
@@ -14,12 +15,14 @@ import {
   calculateAveragePace,
   MIN_SPEED_THRESHOLD_MPS,
   MIN_DISTANCE_DELTA_METERS,
+  GPS_ACCURACY_THRESHOLD_METERS,
 } from '../utils/geo';
 import { saveRunSummary } from '../utils/storage';
 
 export function useRunTracker() {
   const [status, setStatus] = useState<RunStatus>('idle');
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
+  const [isLocationServicesEnabled, setIsLocationServicesEnabled] = useState<boolean>(true);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [distanceMeters, setDistanceMeters] = useState(0);
   const [currentSpeedMps, setCurrentSpeedMps] = useState(0);
@@ -44,6 +47,16 @@ export function useRunTracker() {
 
   const locationSubscriptionRef = useRef<Location.LocationSubscription | null>(null);
   const timerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const checkLocationServices = useCallback(async (): Promise<boolean> => {
+    try {
+      const enabled = await Location.hasServicesEnabledAsync();
+      setIsLocationServicesEnabled(enabled);
+      return enabled;
+    } catch {
+      return true;
+    }
+  }, []);
 
   const stopTimer = () => {
     if (timerIntervalRef.current) {
@@ -168,7 +181,6 @@ export function useRunTracker() {
         deltaMeters >= MIN_DISTANCE_DELTA_METERS;
 
       if (isMoving && deltaMeters < 100) {
-        // Reject wild jumps > 100m between 1-sec ticks
         accumulatedDistanceRef.current += deltaMeters;
         setDistanceMeters(accumulatedDistanceRef.current);
 
@@ -206,6 +218,7 @@ export function useRunTracker() {
     let isMounted = true;
     (async () => {
       try {
+        await checkLocationServices();
         const { status: permStatus } = await Location.getForegroundPermissionsAsync();
         if (isMounted) {
           const granted = permStatus === 'granted';
@@ -225,10 +238,14 @@ export function useRunTracker() {
       stopGpsWatch();
       stopTimer();
     };
-  }, [startGpsWatch]);
+  }, [checkLocationServices, startGpsWatch]);
 
   const requestPermission = async (): Promise<boolean> => {
     try {
+      const servicesEnabled = await checkLocationServices();
+      if (!servicesEnabled) {
+        return false;
+      }
       const { status: permStatus } = await Location.requestForegroundPermissionsAsync();
       const granted = permStatus === 'granted';
       setHasPermission(granted);
@@ -243,11 +260,50 @@ export function useRunTracker() {
     }
   };
 
-  const startRun = async () => {
+  // Derive current GPS health & readiness
+  let gpsIssueReason: GpsIssueReason = null;
+  if (!isLocationServicesEnabled) {
+    gpsIssueReason = 'services_disabled';
+  } else if (hasPermission === false) {
+    gpsIssueReason = 'permission_denied';
+  } else if (gpsAccuracy === null) {
+    gpsIssueReason = 'acquiring';
+  } else if (gpsAccuracy > GPS_ACCURACY_THRESHOLD_METERS) {
+    gpsIssueReason = 'weak_signal';
+  }
+
+  const isGpsReady =
+    isLocationServicesEnabled &&
+    hasPermission === true &&
+    isGpsAccurate &&
+    gpsAccuracy !== null &&
+    gpsAccuracy <= GPS_ACCURACY_THRESHOLD_METERS;
+
+  const startRun = async (): Promise<{ success: boolean; reason?: GpsIssueReason }> => {
+    const servicesEnabled = await checkLocationServices();
+    if (!servicesEnabled) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+      return { success: false, reason: 'services_disabled' };
+    }
+
     let perm = hasPermission;
     if (!perm) {
       perm = await requestPermission();
-      if (!perm) return;
+      if (!perm) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+        return { success: false, reason: 'permission_denied' };
+      }
+    }
+
+    // Gatekeeper: Must have accurate satellite lock to start
+    if (gpsAccuracy === null) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+      return { success: false, reason: 'acquiring' };
+    }
+
+    if (gpsAccuracy > GPS_ACCURACY_THRESHOLD_METERS) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+      return { success: false, reason: 'weak_signal' };
     }
 
     // Ensure GPS watch is running
@@ -273,6 +329,7 @@ export function useRunTracker() {
     setStatus('tracking');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
     startTimer();
+    return { success: true };
   };
 
   const pauseRun = () => {
@@ -342,6 +399,8 @@ export function useRunTracker() {
     currentSpeedMps,
     gpsAccuracyMeters: gpsAccuracy,
     isGpsAccurate,
+    isGpsReady,
+    gpsIssueReason,
     totalValidPoints: totalPointsCount,
   };
 
@@ -349,6 +408,7 @@ export function useRunTracker() {
     telemetry,
     hasPermission,
     lastFinishedRun,
+    checkLocationServices,
     requestPermission,
     startRun,
     pauseRun,

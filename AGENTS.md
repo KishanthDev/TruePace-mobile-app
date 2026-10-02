@@ -52,4 +52,5 @@ Docs: https://docs.expo.dev/eas/index.md
   - Precise Current Pace: Derived from native hardware GPS Doppler speed (`coords.speed` in m/s) converted to min/km ($1000 / \text{speed}$), falling back to a rolling window of recent points if speed is unavailable or under threshold. Display `--'--"` when stationary.
   - Active Elapsed Time: Exclude paused intervals from time and average pace calculations.
   - Local Cache: Save completed runs to local persistent storage for history view.
+  - GPS Gatekeeper: "START RUN" is hard-locked in "WAITING FOR GPS" state until device location services are enabled, permissions granted, and satellite accuracy is verified. Tapping while locked triggers the GpsAlertModal with direct resolution pathways.
 

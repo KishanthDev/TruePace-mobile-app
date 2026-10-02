@@ -10,6 +10,7 @@ import { useRunTracker } from '../hooks/useRunTracker';
 import { MetricTile } from '../components/MetricTile';
 import { ControlButton } from '../components/ControlButton';
 import { RunHistoryModal } from '../components/RunHistoryModal';
+import { GpsAlertModal } from '../components/GpsAlertModal';
 import {
   formatDistanceKm,
   formatDuration,
@@ -31,6 +32,7 @@ export default function RunHudScreen() {
   } = useRunTracker();
 
   const [historyVisible, setHistoryVisible] = useState(false);
+  const [gpsModalVisible, setGpsModalVisible] = useState(false);
 
   const {
     status,
@@ -39,6 +41,8 @@ export default function RunHudScreen() {
     currentPaceSecondsPerKm,
     avgPaceSecondsPerKm,
     isGpsAccurate,
+    isGpsReady,
+    gpsIssueReason,
     gpsAccuracyMeters,
   } = telemetry;
 
@@ -69,7 +73,11 @@ export default function RunHudScreen() {
       <View className="flex-1 px-6 pt-2 pb-6 justify-between">
         {/* Top Header / Precision Telemetry Status */}
         <View className="flex-row items-center justify-between pb-3 border-b border-zinc-900">
-          <View className="flex-row items-center space-x-2">
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() => setGpsModalVisible(true)}
+            className="flex-row items-center space-x-2"
+          >
             <Text className="text-sm font-extrabold tracking-widest text-white uppercase">
               TRUEPACE
             </Text>
@@ -77,7 +85,7 @@ export default function RunHudScreen() {
             <Text className={`text-[11px] font-bold uppercase ml-1 ${gpsStatus.textColor}`}>
               {gpsStatus.label}
             </Text>
-          </View>
+          </TouchableOpacity>
 
           <TouchableOpacity
             onPress={() => setHistoryVisible(true)}
@@ -219,12 +227,33 @@ export default function RunHudScreen() {
         {/* Lower Control Actions */}
         <View className="pt-4 items-center">
           {status === 'idle' && (
-            <ControlButton
-              label="START RUN"
-              variant="primary"
-              size="large"
-              onPress={startRun}
-            />
+            <View className="items-center">
+              <ControlButton
+                label={isGpsReady ? 'START RUN' : 'WAITING FOR GPS'}
+                variant={isGpsReady ? 'primary' : 'secondary'}
+                size="large"
+                onPress={async () => {
+                  if (!isGpsReady) {
+                    setGpsModalVisible(true);
+                    return;
+                  }
+                  const res = await startRun();
+                  if (!res.success) {
+                    setGpsModalVisible(true);
+                  }
+                }}
+              />
+              {!isGpsReady && (
+                <TouchableOpacity
+                  onPress={() => setGpsModalVisible(true)}
+                  className="mt-2.5 px-3 py-1"
+                >
+                  <Text className="text-[11px] font-semibold tracking-wider text-zinc-500 uppercase text-center">
+                    Tap to check GPS status
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
           )}
 
           {status === 'tracking' && (
@@ -268,6 +297,15 @@ export default function RunHudScreen() {
       <RunHistoryModal
         visible={historyVisible}
         onClose={() => setHistoryVisible(false)}
+      />
+
+      {/* GPS Status & Alert Modal */}
+      <GpsAlertModal
+        visible={gpsModalVisible}
+        reason={gpsIssueReason}
+        accuracyMeters={gpsAccuracyMeters}
+        onDismiss={() => setGpsModalVisible(false)}
+        onRequestPermission={requestPermission}
       />
     </View>
   );

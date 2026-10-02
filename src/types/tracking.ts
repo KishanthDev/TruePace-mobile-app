@@ -10,6 +10,13 @@ export interface GpsCoordinate {
 
 export type RunStatus = 'idle' | 'tracking' | 'paused' | 'finished';
 
+export type GpsIssueReason =
+  | 'services_disabled'
+  | 'permission_denied'
+  | 'acquiring'
+  | 'weak_signal'
+  | null;
+
 export interface RunSummary {
   id: string;
   startTime: number;
@@ -30,5 +37,7 @@ export interface TrackingTelemetry {
   currentSpeedMps: number;
   gpsAccuracyMeters: number | null;
   isGpsAccurate: boolean;
+  isGpsReady: boolean;
+  gpsIssueReason: GpsIssueReason;
   totalValidPoints: number;
 }
