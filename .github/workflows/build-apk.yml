@@ -32,7 +32,7 @@ jobs:
       - name: 🟢 Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
 
       - name: 🚀 Setup Expo and EAS CLI
@@ -46,7 +46,7 @@ jobs:
 
       - name: 🛠️ Build APK on EAS
         run: |
-          npx eas-cli build \
+          eas build \
             --platform android \
             --profile preview \
             --non-interactive \
