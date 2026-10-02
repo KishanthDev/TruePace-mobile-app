@@ -44,13 +44,22 @@ jobs:
       - name: 📦 Install dependencies
         run: npm ci
 
-      - name: 🛠️ Build APK on EAS
+      - name: 🛠️ Build APK on EAS Cloud
         run: |
           eas build \
             --platform android \
             --profile preview \
-            --non-interactive \
-            --output ./truepace-latest.apk
+            --non-interactive
+
+      - name: 📥 Download Built APK Artifact
+        run: |
+          BUILD_URL=$(eas build:list --platform android --profile preview --limit 1 --json --non-interactive | jq -r '.[0].artifacts.buildUrl')
+          if [ -z "$BUILD_URL" ] || [ "$BUILD_URL" = "null" ]; then
+            echo "❌ Error: Could not retrieve buildUrl from EAS build:list"
+            exit 1
+          fi
+          echo "⬇️ Downloading APK from: $BUILD_URL"
+          curl -L -o ./truepace-latest.apk "$BUILD_URL"
 
       - name: 📤 Upload APK Artifact to Actions Run
         uses: actions/upload-artifact@v4
