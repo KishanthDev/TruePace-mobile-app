@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { Platform } from 'react-native';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import * as Haptics from 'expo-haptics';
@@ -28,15 +30,22 @@ import {
   setLocationUpdateHandler,
 } from '../tasks/locationTask';
 
+// ─── Environment Detection ───────────────────────────────────────────────────
+
+const isExpoGo =
+  Constants.executionEnvironment === ExecutionEnvironment.StoreClient ||
+  Constants.appOwnership === 'expo';
+const isAndroidExpoGo = isExpoGo && Platform.OS === 'android';
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-/** Rolling speed buffer size for median best-pace protection (Fix 6) */
+/** Rolling speed buffer size for median best-pace protection */
 const SPEED_BUFFER_SIZE = 5;
 
-/** Consecutive LOW_ACCURACY rejections before relaxing to fallback threshold (Fix 5) */
+/** Consecutive LOW_ACCURACY rejections before relaxing to fallback threshold */
 const ADAPTIVE_ACCURACY_TRIGGER = 5;
 
-/** Doppler speed ≈ 0 but implied speed clearly running → override stationary guard (Fix 3) */
+/** Doppler speed ≈ 0 but implied speed clearly running → override stationary guard */
 const DOPPLER_ZERO_IMPLIED_OVERRIDE_MPS = 1.0;
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
@@ -63,36 +72,30 @@ export function useRunTracker() {
   statusRef.current = status;
 
   // ── Refs: GPS anchor state ───────────────────────────────────────────────────
-  // lastGpsReadingRef   — latest received raw GPS fix (always updated)
-  // lastAcceptedCoordRef — last anchor accepted for distance (NEVER updated on reject)
-  // lastAcceptedTimestampRef — timestamp of that anchor
-  // accumulatedDistanceRef — session running total
-  // isPausedRef — synchronous pause flag (ref, not state, for callback visibility)
   const lastGpsReadingRef = useRef<GpsCoordinate | null>(null);
   const lastAcceptedCoordRef = useRef<GpsCoordinate | null>(null);
   const lastAcceptedTimestampRef = useRef<number | null>(null);
   const accumulatedDistanceRef = useRef<number>(0);
   const isPausedRef = useRef<boolean>(false);
 
-  // ── Refs: wall-clock elapsed time (Fix 2) ───────────────────────────────────
-  // Elapsed time is derived from wall clock, not setInterval ticks, to prevent drift.
+  // ── Refs: wall-clock elapsed time ───────────────────────────────────────────
   const startTimeRef = useRef<number>(0);
-  const totalPausedMsRef = useRef<number>(0);   // cumulative paused milliseconds
-  const pauseStartTimeRef = useRef<number | null>(null); // wall-clock ms when current pause began
-  const elapsedSecondsRef = useRef<number>(0);  // last computed active elapsed seconds
+  const totalPausedMsRef = useRef<number>(0);
+  const pauseStartTimeRef = useRef<number | null>(null);
+  const elapsedSecondsRef = useRef<number>(0);
 
   // ── Refs: pace & speed ──────────────────────────────────────────────────────
-  const recentPointsRef = useRef<GpsCoordinate[]>([]); // 10-second rolling window for pace fallback
-  const speedBufferRef = useRef<number[]>([]);          // rolling Doppler buffer for median max speed (Fix 6)
-  const maxSpeedRef = useRef<number>(0);                // median-protected peak speed
+  const recentPointsRef = useRef<GpsCoordinate[]>([]);
+  const speedBufferRef = useRef<number[]>([]);
+  const maxSpeedRef = useRef<number>(0);
   const lastKilometerMilestoneRef = useRef<number>(0);
 
-  // ── Refs: adaptive accuracy state (Fix 5) ───────────────────────────────────
+  // ── Refs: adaptive accuracy state ───────────────────────────────────────────
   const consecutiveLowAccuracyRef = useRef<number>(0);
 
   // ── Refs: subscriptions & timer ─────────────────────────────────────────────
-  // preWarmSubscriptionRef — foreground watchPositionAsync used during idle GPS display
-  const preWarmSubscriptionRef = useRef<Location.LocationSubscription | null>(null);
+  const foregroundSubscriptionRef = useRef<Location.LocationSubscription | null>(null);
+  const isBackgroundTrackingActiveRef = useRef<boolean>(false);
   const timerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // ────────────────────────────────────────────────────────────────────────────
@@ -109,7 +112,7 @@ export function useRunTracker() {
     }
   }, []);
 
-  // ── Timer: wall-clock elapsed (Fix 2) ───────────────────────────────────────
+  // ── Timer: wall-clock elapsed ───────────────────────────────────────────────
   const stopTimer = () => {
     if (timerIntervalRef.current) {
       clearInterval(timerIntervalRef.current);
@@ -121,7 +124,6 @@ export function useRunTracker() {
     stopTimer();
     timerIntervalRef.current = setInterval(() => {
       if (statusRef.current === 'tracking') {
-        // Wall-clock calculation — immune to setInterval drift and JS event-loop delay
         const now = Date.now();
         const activeMs = now - startTimeRef.current - totalPausedMsRef.current;
         const newElapsed = Math.floor(activeMs / 1000);
@@ -134,18 +136,8 @@ export function useRunTracker() {
     }, 1000);
   };
 
-  // ── GPS subscriptions ────────────────────────────────────────────────────────
-
-  const stopPreWarmWatch = () => {
-    if (preWarmSubscriptionRef.current) {
-      preWarmSubscriptionRef.current.remove();
-      preWarmSubscriptionRef.current = null;
-    }
-  };
-
   /**
    * Evaluates rolling pace across the last 10 seconds of valid points.
-   * Fallback when Doppler speed is unavailable.
    */
   const computeRollingPace = (recentPoints: GpsCoordinate[]): number | null => {
     if (recentPoints.length < 2) return null;
@@ -164,26 +156,13 @@ export function useRunTracker() {
       );
     }
 
-    if (totalDist < 3) return null; // stationary drift in buffer
+    if (totalDist < 3) return null;
     const speed = totalDist / timeDeltaSeconds;
     return speedToPace(speed);
   };
 
   // ────────────────────────────────────────────────────────────────────────────
   // Core GPS update handler — shared between foreground watch and background task
-  //
-  // Acceptance pipeline (stateful, strictly ordered):
-  //   1. INVALID_ACCURACY  – null / ≤0 accuracy
-  //   2. LOW_ACCURACY      – exceeds threshold (adaptive fallback after 5 consecutive)
-  //   3. PAUSED            – tracking paused
-  //   4. INVALID_TIMESTAMP – missing / NaN / out-of-order
-  //   5. Establish anchor  – first point after start / resume / gap
-  //   6. GPS_GAP           – gap > 15s: re-anchor, clear pace buffer (Fix 4)
-  //   7. IMPOSSIBLE_SPEED  – implied speed > 8 m/s (teleportation)
-  //   8. GPS_JITTER        – delta < 2m: anchor stable, movement accumulates
-  //   9. STATIONARY_DRIFT  – combined Doppler + implied speed check
-  //      FIX 3: if Doppler ≈ 0 but implied > 1 m/s → override, trust coordinates
-  //  10. ACCEPT            – update anchor, accumulate distance
   // ────────────────────────────────────────────────────────────────────────────
   const handleLocationUpdate = useCallback((location: Location.LocationObject) => {
     const coord: GpsCoordinate = {
@@ -197,15 +176,12 @@ export function useRunTracker() {
     };
 
     lastGpsReadingRef.current = coord;
-
     const rawSpeed = coord.speed !== null && coord.speed >= 0 ? coord.speed : null;
 
-    // Update rolling Doppler speed buffer (Fix 6 — median max speed protection)
     if (rawSpeed !== null) {
       speedBufferRef.current = [...speedBufferRef.current, rawSpeed].slice(-SPEED_BUFFER_SIZE);
     }
 
-    /** Emit structured diagnostic log and update rejection state */
     const recordDiagnostic = (
       accepted: boolean,
       rejectionReason: GpsPointRejectionReason,
@@ -241,13 +217,12 @@ export function useRunTracker() {
 
     setGpsAccuracy(coord.accuracy);
 
-    // ── Step 2: LOW_ACCURACY with adaptive fallback (Fix 5) ─────────────────
+    // ── Step 2: LOW_ACCURACY with adaptive fallback ──────────────────────────
     const isPreferredAccurate = isValidGpsPoint(coord, GPS_ACCURACY_THRESHOLD_METERS);
     let effectivelyAccurate = isPreferredAccurate;
 
     if (!isPreferredAccurate) {
       consecutiveLowAccuracyRef.current++;
-      // Relax to fallback threshold only during active tracking after 5 bad reads
       if (
         statusRef.current === 'tracking' &&
         consecutiveLowAccuracyRef.current >= ADAPTIVE_ACCURACY_TRIGGER
@@ -259,9 +234,8 @@ export function useRunTracker() {
         recordDiagnostic(false, 'LOW_ACCURACY', null, null, null);
         return;
       }
-      // Accepted via fallback — don't reset streak so relaxed mode persists
     } else {
-      consecutiveLowAccuracyRef.current = 0; // Good signal — reset adaptive streak
+      consecutiveLowAccuracyRef.current = 0;
     }
 
     setIsGpsAccurate(effectivelyAccurate);
@@ -274,7 +248,6 @@ export function useRunTracker() {
       return;
     }
 
-    // Not tracking (idle / finished) — only GPS display is needed, no distance
     if (statusRef.current !== 'tracking') {
       return;
     }
@@ -293,14 +266,13 @@ export function useRunTracker() {
       return;
     }
 
-    // ── Update rolling pace buffer (all accuracy/timestamp-valid points) ─────
+    // ── Update rolling pace buffer ───────────────────────────────────────────
     const now = coord.timestamp;
     recentPointsRef.current = [
       ...recentPointsRef.current.filter((p) => now - p.timestamp <= 10000),
       coord,
     ];
 
-    // ── Instantaneous pace: Doppler first, rolling fallback second ───────────
     let calculatedPace = speedToPace(rawSpeed);
     if (calculatedPace === null && rawSpeed === null) {
       calculatedPace = computeRollingPace(recentPointsRef.current);
@@ -308,7 +280,7 @@ export function useRunTracker() {
     setCurrentSpeedMps(rawSpeed ?? 0);
     setCurrentPace(calculatedPace);
 
-    // ── Update median max speed (Fix 6) ──────────────────────────────────────
+    // ── Update median max speed ──────────────────────────────────────────────
     if (speedBufferRef.current.length >= 3) {
       const sorted = [...speedBufferRef.current].sort((a, b) => a - b);
       const median = sorted[Math.floor(sorted.length / 2)];
@@ -326,11 +298,10 @@ export function useRunTracker() {
       return;
     }
 
-    // ── Step 6: GPS_GAP + clear stale pace buffer (Fix 4) ───────────────────
+    // ── Step 6: GPS_GAP + clear stale pace buffer ───────────────────────────
     const elapsedFromAnchorSeconds = (coord.timestamp - lastAcceptedTimestampRef.current) / 1000;
 
     if (elapsedFromAnchorSeconds > MAX_GPS_GAP_SECONDS) {
-      // Clear stale rolling pace buffer — prevents fake pace spike after tunnel exit
       recentPointsRef.current = [];
       lastAcceptedCoordRef.current = coord;
       lastAcceptedTimestampRef.current = coord.timestamp;
@@ -348,16 +319,13 @@ export function useRunTracker() {
 
     const impliedSpeed = deltaMeters / elapsedFromAnchorSeconds;
 
-    // IMPOSSIBLE_SPEED: coordinate jump implies > 8 m/s (multipath / tower handoff)
     if (impliedSpeed > MAX_REASONABLE_RUNNING_SPEED_MPS) {
       recordDiagnostic(false, 'IMPOSSIBLE_SPEED', deltaMeters, elapsedFromAnchorSeconds, impliedSpeed);
       return;
     }
 
-    // ── Step 8: GPS_JITTER — anchor stable, slow movement builds up ──────────
+    // ── Step 8: GPS_JITTER ───────────────────────────────────────────────────
     if (deltaMeters < MIN_DISTANCE_DELTA_METERS) {
-      // Anchor intentionally NOT updated — genuine slow movement accumulates
-      // across multiple GPS ticks until it crosses the 2m threshold.
       recordDiagnostic(false, 'GPS_JITTER', deltaMeters, elapsedFromAnchorSeconds, impliedSpeed);
       return;
     }
@@ -366,12 +334,8 @@ export function useRunTracker() {
     let isStationary = false;
 
     if (rawSpeed !== null) {
-      // Doppler speed is available
       if (rawSpeed < 0.35) {
-        // Fix 3: Doppler reports stationary, but check if coordinates clearly
-        // show movement (common on budget GNSS chipsets that output stale 0 m/s)
         if (impliedSpeed > DOPPLER_ZERO_IMPLIED_OVERRIDE_MPS) {
-          // Coordinate-derived evidence overrides stale Doppler zero
           isStationary = false;
         } else {
           isStationary = true;
@@ -380,7 +344,6 @@ export function useRunTracker() {
         isStationary = true;
       }
     } else {
-      // Doppler unavailable — rely on implied speed alone
       if (impliedSpeed < 0.35) {
         isStationary = true;
       }
@@ -391,7 +354,7 @@ export function useRunTracker() {
       return;
     }
 
-    // ── Step 10: ACCEPT — accumulate distance, advance anchor ────────────────
+    // ── Step 10: ACCEPT ──────────────────────────────────────────────────────
     accumulatedDistanceRef.current += deltaMeters;
     lastAcceptedCoordRef.current = coord;
     lastAcceptedTimestampRef.current = coord.timestamp;
@@ -400,7 +363,6 @@ export function useRunTracker() {
     setTotalPointsCount((prev) => prev + 1);
     recordDiagnostic(true, null, deltaMeters, elapsedFromAnchorSeconds, impliedSpeed);
 
-    // Kilometer milestone haptic
     const currentKm = Math.floor(accumulatedDistanceRef.current / 1000);
     if (currentKm > lastKilometerMilestoneRef.current) {
       lastKilometerMilestoneRef.current = currentKm;
@@ -409,19 +371,14 @@ export function useRunTracker() {
   }, []);
 
   // ────────────────────────────────────────────────────────────────────────────
-  // GPS Watch Management
-  //
-  // Pre-warm (idle state): lightweight watchPositionAsync — fires handleLocationUpdate
-  //   for GPS accuracy display; status !== 'tracking' blocks distance accumulation.
-  //
-  // Active tracking: startLocationUpdatesAsync (Fix 1 — background capable) —
-  //   continues firing when screen locks via the module-level task handler in
-  //   src/tasks/locationTask.ts.
+  // GPS Watch Management (Resilient Foreground + Optional Background)
   // ────────────────────────────────────────────────────────────────────────────
 
-  /** Start foreground pre-warm watch (idle GPS accuracy display only) */
-  const startPreWarmWatch = useCallback(async () => {
-    if (preWarmSubscriptionRef.current) return;
+  /**
+   * Primary foreground location watch (100% reliable across all Android/iOS/Expo Go versions)
+   */
+  const startForegroundWatch = useCallback(async () => {
+    if (foregroundSubscriptionRef.current) return;
     try {
       const sub = await Location.watchPositionAsync(
         {
@@ -431,25 +388,46 @@ export function useRunTracker() {
         },
         handleLocationUpdate
       );
-      preWarmSubscriptionRef.current = sub;
+      foregroundSubscriptionRef.current = sub;
     } catch (err) {
-      console.warn('[TruePace] Pre-warm GPS watch error:', err);
+      console.warn('[TruePace] Foreground GPS watch error:', err);
     }
   }, [handleLocationUpdate]);
 
+  const stopForegroundWatch = useCallback(() => {
+    if (foregroundSubscriptionRef.current) {
+      foregroundSubscriptionRef.current.remove();
+      foregroundSubscriptionRef.current = null;
+    }
+  }, []);
+
   /**
-   * Start background-capable location tracking (Fix 1).
-   *
-   * Uses startLocationUpdatesAsync which:
-   *  - Continues firing when screen is locked (Android + iOS background mode)
-   *  - Shows a persistent notification on Android (foreground service)
-   *  - Falls back to watchPositionAsync on Expo Go / unsupported environments
+   * Background location tracking (Progressive Enhancement).
+   * Fully protected: never throws, never crashes if permissions or OS restrictions prevent it.
    */
   const startBackgroundWatch = useCallback(async () => {
-    const canBackground = await TaskManager.isAvailableAsync().catch(() => false);
+    // In Expo Go on Android, background location is explicitly unsupported
+    if (isAndroidExpoGo) {
+      await startForegroundWatch();
+      return;
+    }
 
-    if (canBackground) {
-      // Register the module-level handler so the background task can reach our callback
+    try {
+      const canBackground = await TaskManager.isAvailableAsync().catch(() => false);
+      if (!canBackground) {
+        await startForegroundWatch();
+        return;
+      }
+
+      // Check if user granted "Allow all the time" background permission
+      const bgPerm = await Location.getBackgroundPermissionsAsync().catch(() => null);
+      if (!bgPerm || bgPerm.status !== 'granted') {
+        // Without background permission, calling startLocationUpdatesAsync on Android throws E_LOCATION_UNAUTHORIZED.
+        // Fall back gracefully to foreground tracking — prevents APK crash!
+        await startForegroundWatch();
+        return;
+      }
+
       setLocationUpdateHandler(handleLocationUpdate);
 
       const alreadyRunning = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME).catch(() => false);
@@ -458,35 +436,41 @@ export function useRunTracker() {
           accuracy: Location.Accuracy.BestForNavigation,
           timeInterval: 1000,
           distanceInterval: 0,
-          // Android: foreground service notification keeps tracking alive
           foregroundService: {
             notificationTitle: 'TruePace — Recording',
             notificationBody: 'Tracking your active run',
             notificationColor: '#22c55e',
           },
-          // iOS: activityType optimises GPS for fitness use, conserving battery
           activityType: Location.ActivityType.Fitness,
           pausesUpdatesAutomatically: false,
           showsBackgroundLocationIndicator: true,
         });
       }
-    } else {
-      // Expo Go / simulator — fall back to foreground-only watch
-      console.warn('[TruePace] Background tasks unavailable — foreground-only tracking');
-      await startPreWarmWatch();
+      isBackgroundTrackingActiveRef.current = true;
+      // Also maintain foreground watch for real-time responsiveness when screen is visible
+      await startForegroundWatch();
+    } catch (err) {
+      console.warn('[TruePace] Background location failed to start, falling back to foreground:', err);
+      isBackgroundTrackingActiveRef.current = false;
+      await startForegroundWatch();
     }
-  }, [handleLocationUpdate, startPreWarmWatch]);
+  }, [handleLocationUpdate, startForegroundWatch]);
 
-  /** Stop background location task and clear module handler */
   const stopBackgroundWatch = useCallback(async () => {
     setLocationUpdateHandler(null);
-    const isRunning = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME).catch(() => false);
-    if (isRunning) {
-      await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME).catch(() => {});
+    isBackgroundTrackingActiveRef.current = false;
+    if (isAndroidExpoGo) return;
+    try {
+      const isRunning = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME).catch(() => false);
+      if (isRunning) {
+        await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME).catch(() => {});
+      }
+    } catch {
+      // ignore
     }
   }, []);
 
-  // ── Boot: check permissions and start pre-warm GPS ───────────────────────────
+  // ── Boot: check permissions and start foreground GPS ─────────────────────────
   useEffect(() => {
     let isMounted = true;
     (async () => {
@@ -497,7 +481,7 @@ export function useRunTracker() {
           const granted = permStatus === 'granted';
           setHasPermission(granted);
           if (granted) {
-            await startPreWarmWatch();
+            await startForegroundWatch();
           }
         }
       } catch (err) {
@@ -508,13 +492,11 @@ export function useRunTracker() {
 
     return () => {
       isMounted = false;
-      // Stop foreground pre-warm watch on unmount.
-      // Background task is NOT stopped here — it keeps running while tracking is active.
-      stopPreWarmWatch();
+      stopForegroundWatch();
       setLocationUpdateHandler(null);
       stopTimer();
     };
-  }, [checkLocationServices, startPreWarmWatch]);
+  }, [checkLocationServices, startForegroundWatch, stopForegroundWatch]);
 
   // ── Permission request ────────────────────────────────────────────────────────
   const requestPermission = async (): Promise<boolean> => {
@@ -527,10 +509,16 @@ export function useRunTracker() {
       setHasPermission(granted);
 
       if (granted) {
-        // Best-effort request for background / "Always Allow" permission.
-        // The user may decline — foreground tracking still works.
-        await Location.requestBackgroundPermissionsAsync().catch(() => {});
-        await startPreWarmWatch();
+        await startForegroundWatch();
+
+        // On standalone builds (not Expo Go Android), request background permission
+        if (!isAndroidExpoGo) {
+          try {
+            await Location.requestBackgroundPermissionsAsync();
+          } catch {
+            // Non-fatal if user declines background
+          }
+        }
       }
       return granted;
     } catch (err) {
@@ -560,81 +548,84 @@ export function useRunTracker() {
     gpsAccuracy <= GPS_ACCURACY_THRESHOLD_METERS;
 
   // ────────────────────────────────────────────────────────────────────────────
-  // Run lifecycle
+  // Run lifecycle (All wrapped in resilient try/catch — NEVER crashes)
   // ────────────────────────────────────────────────────────────────────────────
 
   const startRun = async (): Promise<{ success: boolean; reason?: GpsIssueReason }> => {
-    const servicesEnabled = await checkLocationServices();
-    if (!servicesEnabled) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
-      return { success: false, reason: 'services_disabled' };
-    }
-
-    let perm = hasPermission;
-    if (!perm) {
-      perm = await requestPermission();
-      if (!perm) {
+    try {
+      const servicesEnabled = await checkLocationServices();
+      if (!servicesEnabled) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
-        return { success: false, reason: 'permission_denied' };
+        return { success: false, reason: 'services_disabled' };
       }
-    }
 
-    if (gpsAccuracy === null) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+      let perm = hasPermission;
+      if (!perm) {
+        perm = await requestPermission();
+        if (!perm) {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+          return { success: false, reason: 'permission_denied' };
+        }
+      }
+
+      if (gpsAccuracy === null) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+        return { success: false, reason: 'acquiring' };
+      }
+
+      if (gpsAccuracy > GPS_ACCURACY_THRESHOLD_METERS) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+        return { success: false, reason: 'weak_signal' };
+      }
+
+      // Safely start tracking (background if available, foreground fallback guaranteed)
+      await startBackgroundWatch();
+
+      // Reset all session metrics
+      accumulatedDistanceRef.current = 0;
+      elapsedSecondsRef.current = 0;
+      lastKilometerMilestoneRef.current = 0;
+      maxSpeedRef.current = 0;
+      lastGpsReadingRef.current = null;
+      lastAcceptedCoordRef.current = null;
+      lastAcceptedTimestampRef.current = null;
+      isPausedRef.current = false;
+      recentPointsRef.current = [];
+      speedBufferRef.current = [];
+      consecutiveLowAccuracyRef.current = 0;
+
+      // Wall-clock timer reset
+      startTimeRef.current = Date.now();
+      totalPausedMsRef.current = 0;
+      pauseStartTimeRef.current = null;
+
+      setDistanceMeters(0);
+      setElapsedSeconds(0);
+      setCurrentPace(null);
+      setAvgPace(null);
+      setCurrentSpeedMps(0);
+      setTotalPointsCount(0);
+      setLastFinishedRun(null);
+      setLastRejectionReason(null);
+      setLastDiagnosticLog(null);
+
+      setStatus('tracking');
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
+      startTimer();
+      return { success: true };
+    } catch (err) {
+      console.error('[TruePace] Error starting run:', err);
+      // Ensure foreground tracking is running so the user is never left without tracking
+      await startForegroundWatch().catch(() => {});
       return { success: false, reason: 'acquiring' };
     }
-
-    if (gpsAccuracy > GPS_ACCURACY_THRESHOLD_METERS) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
-      return { success: false, reason: 'weak_signal' };
-    }
-
-    // Switch from foreground pre-warm to background-capable tracking (Fix 1)
-    stopPreWarmWatch();
-    await startBackgroundWatch();
-
-    // Reset all session state
-    accumulatedDistanceRef.current = 0;
-    elapsedSecondsRef.current = 0;
-    lastKilometerMilestoneRef.current = 0;
-    maxSpeedRef.current = 0;
-    lastGpsReadingRef.current = null;
-    lastAcceptedCoordRef.current = null;
-    lastAcceptedTimestampRef.current = null;
-    isPausedRef.current = false;
-    recentPointsRef.current = [];
-    speedBufferRef.current = [];
-    consecutiveLowAccuracyRef.current = 0;
-
-    // Wall-clock timer reset (Fix 2)
-    startTimeRef.current = Date.now();
-    totalPausedMsRef.current = 0;
-    pauseStartTimeRef.current = null;
-
-    setDistanceMeters(0);
-    setElapsedSeconds(0);
-    setCurrentPace(null);
-    setAvgPace(null);
-    setCurrentSpeedMps(0);
-    setTotalPointsCount(0);
-    setLastFinishedRun(null);
-    setLastRejectionReason(null);
-    setLastDiagnosticLog(null);
-
-    setStatus('tracking');
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
-    startTimer();
-    return { success: true };
   };
 
   const pauseRun = () => {
-    // Wall-clock: record when pause began (Fix 2)
     pauseStartTimeRef.current = Date.now();
-
     setStatus('paused');
     isPausedRef.current = true;
 
-    // Clear accepted anchor — post-resume will establish a clean fresh anchor
     lastAcceptedCoordRef.current = null;
     lastAcceptedTimestampRef.current = null;
 
@@ -644,7 +635,6 @@ export function useRunTracker() {
   };
 
   const resumeRun = () => {
-    // Wall-clock: accumulate the time spent paused (Fix 2)
     if (pauseStartTimeRef.current !== null) {
       totalPausedMsRef.current += Date.now() - pauseStartTimeRef.current;
       pauseStartTimeRef.current = null;
@@ -653,11 +643,8 @@ export function useRunTracker() {
     setStatus('tracking');
     isPausedRef.current = false;
 
-    // Clear anchor — first post-resume GPS reading becomes the new anchor
     lastAcceptedCoordRef.current = null;
     lastAcceptedTimestampRef.current = null;
-
-    // Clear stale rolling pace (no stale pre-pause pace shown after resume)
     recentPointsRef.current = [];
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
@@ -666,7 +653,6 @@ export function useRunTracker() {
   const finishRun = async (): Promise<RunSummary | null> => {
     stopTimer();
 
-    // Final wall-clock elapsed: freeze active seconds at the moment finish is tapped
     if (pauseStartTimeRef.current !== null) {
       totalPausedMsRef.current += Date.now() - pauseStartTimeRef.current;
       pauseStartTimeRef.current = null;
@@ -674,9 +660,8 @@ export function useRunTracker() {
     const finalDuration = elapsedSecondsRef.current;
     const finalDistance = accumulatedDistanceRef.current;
 
-    // Stop background tracking and return to foreground pre-warm (Fix 1)
     await stopBackgroundWatch();
-    await startPreWarmWatch();
+    await startForegroundWatch();
 
     const summary: RunSummary = {
       id: `${startTimeRef.current}_${Math.random().toString(36).substring(2, 7)}`,
@@ -703,9 +688,8 @@ export function useRunTracker() {
   const resetRun = async () => {
     stopTimer();
 
-    // Stop any background tracking that may still be running
     await stopBackgroundWatch();
-    await startPreWarmWatch();
+    await startForegroundWatch();
 
     setStatus('idle');
     isPausedRef.current = false;

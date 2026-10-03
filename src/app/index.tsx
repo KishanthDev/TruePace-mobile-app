@@ -237,9 +237,13 @@ export default function RunHudScreen() {
                     setGpsModalVisible(true);
                     return;
                   }
-                  const res = await startRun();
-                  if (!res.success) {
-                    setGpsModalVisible(true);
+                  try {
+                    const res = await startRun();
+                    if (!res.success) {
+                      setGpsModalVisible(true);
+                    }
+                  } catch (err) {
+                    console.warn('[TruePace] Error starting run:', err);
                   }
                 }}
               />
