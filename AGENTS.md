@@ -46,11 +46,23 @@ Docs: https://docs.expo.dev/eas/index.md
 - **Design Philosophy**: Minimalist, distraction-free HUD. No live map rendering during run to maximize battery life, screen clarity, and performance. OLED black palette with bold high-contrast tabular typography.
 - **Precision Tracking Engine**:
   - Use `expo-location` with high accuracy (`Accuracy.BestForNavigation` / `Accuracy.High`).
-  - GPS noise filtering: Reject coordinates with accuracy error greater than 15 meters.
-  - Stationary drift suppression: Only accumulate distance when movement speed $\ge 0.5\text{ m/s}$ and distance delta $> 2\text{m}$.
-  - Haversine distance formula between consecutive valid points.
-  - Precise Current Pace: Derived from native hardware GPS Doppler speed (`coords.speed` in m/s) converted to min/km ($1000 / \text{speed}$), falling back to a rolling window of recent points if speed is unavailable or under threshold. Display `--'--"` when stationary.
-  - Active Elapsed Time: Exclude paused intervals from time and average pace calculations.
-  - Local Cache: Save completed runs to local persistent storage for history view.
-  - GPS Gatekeeper: "START RUN" is hard-locked in "WAITING FOR GPS" state until device location services are enabled, permissions granted, and satellite accuracy is verified. Tapping while locked triggers the GpsAlertModal with direct resolution pathways.
+  - **Distance Method**: Haversine distance formula with Earth radius $R = 6,371,000\text{ m}$.
+  - **Separation of Concerns**: Separate raw GPS readings (`lastGpsReadingRef`) from accepted distance anchors (`lastAcceptedCoordRef`, `lastAcceptedTimestampRef`, `accumulatedDistanceRef`, `isPausedRef`). A GPS point can be validly received but rejected for distance.
+  - **GPS Accuracy Filtering**: Configurable horizontal accuracy threshold (`GPS_ACCURACY_THRESHOLD_METERS = 15`, fallback ~20m). Reject coordinates when accuracy is null, undefined, $\le 0$, or exceeds threshold.
+  - **Stateful Acceptance Algorithm** (No simple AND/OR rules):
+    1. Validate estimated horizontal accuracy.
+    2. Validate timestamps (reject non-positive, duplicate, or out-of-order readings).
+    3. Check pause state (never accumulate distance while paused).
+    4. Handle tracking gaps (`MAX_GPS_GAP_SECONDS = 15s`): Re-establish anchor without inventing straight-line distance across gaps.
+    5. Implied speed validation (`impliedSpeed = deltaMeters / elapsedSeconds`): Reject impossible teleportation jumps ($> 8.0\text{ m/s} \approx 28.8\text{ km/h}$).
+    6. Minimum movement threshold (`MIN_DISTANCE_DELTA_METERS = 2.0\text{m}`): Do NOT update anchor when below threshold so slow genuine movement builds up over time without Zeno truncation.
+    7. Stationary drift protection: Combine native Doppler speed, implied speed, and elapsed time to suppress stationary GPS jitter and oscillations.
+    8. Strict Anchor Rule: `lastAcceptedCoordRef` is ONLY updated when a point is accepted for distance. Rejected points never move the anchor.
+  - **Pause/Resume Behavior**: Pausing clears `lastAcceptedCoordRef` and `lastAcceptedTimestampRef`. Resuming establishes a fresh anchor on the first accurate post-resume reading, completely excluding any distance traveled while paused.
+  - **Doppler Speed Synergy**: Native GNSS Doppler speed (`coords.speed`) is used for instantaneous pace, telemetry, and movement confidence, but coordinate distance remains the primary authority for total session distance.
+  - **Active Elapsed Time**: Stopwatch timer and average pace calculations strictly count active running seconds, excluding paused intervals.
+  - **Diagnostic Telemetry**: Track rejection reasons (`INVALID_ACCURACY`, `LOW_ACCURACY`, `GPS_JITTER`, `IMPOSSIBLE_SPEED`, `INVALID_TIMESTAMP`, `PAUSED`, `GPS_GAP`, `STATIONARY_DRIFT`).
+  - **Local Cache**: Save completed runs to local persistent storage for history view.
+  - **GPS Gatekeeper**: "START RUN" is hard-locked in "WAITING FOR GPS" state until device location services are enabled, permissions granted, and satellite accuracy is verified. Tapping while locked triggers the GpsAlertModal with direct resolution pathways.
+
 

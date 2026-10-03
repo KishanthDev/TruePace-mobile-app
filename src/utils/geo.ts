@@ -1,10 +1,13 @@
 import { GpsCoordinate } from '../types/tracking';
 
 const EARTH_RADIUS_METERS = 6371000;
-export const GPS_ACCURACY_THRESHOLD_METERS = 25; // Max acceptable GPS error for tracking
+export const GPS_ACCURACY_THRESHOLD_METERS = 15; // Preferred GPS horizontal accuracy threshold (meters)
+export const GPS_ACCURACY_FALLBACK_THRESHOLD_METERS = 20; // Configurable fallback threshold for challenging environments
 export const GPS_OPTIMAL_LOCK_METERS = 15; // Optimal precision lock threshold
 export const MIN_SPEED_THRESHOLD_MPS = 0.5; // 0.5 m/s (~1.8 km/h) stationary cutoff
-export const MIN_DISTANCE_DELTA_METERS = 2.0; // Ignore tiny coordinate oscillations
+export const MIN_DISTANCE_DELTA_METERS = 2.0; // Minimum distance from anchor to evaluate movement
+export const MAX_REASONABLE_RUNNING_SPEED_MPS = 8.0; // ~28.8 km/h upper bound for implied speed (teleportation guard)
+export const MAX_GPS_GAP_SECONDS = 15.0; // Max allowed gap before establishing a new anchor
 
 /**
  * Calculates distance between two coordinates in meters using the Haversine formula.
@@ -32,13 +35,16 @@ export function calculateHaversineDistance(
 
 /**
  * Validates whether a GPS point satisfies precision thresholds.
+ * Note: accuracy represents estimated horizontal accuracy, not an exact error radius.
  */
-export function isValidGpsPoint(coord: GpsCoordinate): boolean {
-  if (coord.accuracy === null || coord.accuracy === undefined) {
+export function isValidGpsPoint(
+  coord: GpsCoordinate,
+  threshold: number = GPS_ACCURACY_THRESHOLD_METERS
+): boolean {
+  if (coord.accuracy === null || coord.accuracy === undefined || coord.accuracy <= 0) {
     return false;
   }
-  // Filter out low confidence GPS readings (> 15m radius error)
-  return coord.accuracy <= GPS_ACCURACY_THRESHOLD_METERS && coord.accuracy > 0;
+  return coord.accuracy <= threshold;
 }
 
 /**

@@ -17,6 +17,31 @@ export type GpsIssueReason =
   | 'weak_signal'
   | null;
 
+export type GpsPointRejectionReason =
+  | 'INVALID_ACCURACY'
+  | 'LOW_ACCURACY'
+  | 'GPS_JITTER'
+  | 'IMPOSSIBLE_SPEED'
+  | 'INVALID_TIMESTAMP'
+  | 'PAUSED'
+  | 'GPS_GAP'
+  | 'STATIONARY_DRIFT'
+  | null;
+
+export interface GpsDiagnosticLog {
+  latitude: number;
+  longitude: number;
+  accuracy: number | null;
+  timestamp: number;
+  distanceFromAnchor: number | null;
+  elapsedSeconds: number | null;
+  impliedSpeed: number | null;
+  nativeGpsSpeed: number | null;
+  accepted: boolean;
+  rejectionReason: GpsPointRejectionReason;
+  accumulatedDistance: number;
+}
+
 export interface RunSummary {
   id: string;
   startTime: number;
@@ -40,4 +65,6 @@ export interface TrackingTelemetry {
   isGpsReady: boolean;
   gpsIssueReason: GpsIssueReason;
   totalValidPoints: number;
+  lastRejectionReason?: GpsPointRejectionReason;
+  lastDiagnosticLog?: GpsDiagnosticLog | null;
 }

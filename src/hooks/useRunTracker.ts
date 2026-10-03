@@ -3,7 +3,9 @@ import * as Location from 'expo-location';
 import * as Haptics from 'expo-haptics';
 import {
   GpsCoordinate,
+  GpsDiagnosticLog,
   GpsIssueReason,
+  GpsPointRejectionReason,
   RunStatus,
   RunSummary,
   TrackingTelemetry,
@@ -16,6 +18,8 @@ import {
   MIN_SPEED_THRESHOLD_MPS,
   MIN_DISTANCE_DELTA_METERS,
   GPS_ACCURACY_THRESHOLD_METERS,
+  MAX_REASONABLE_RUNNING_SPEED_MPS,
+  MAX_GPS_GAP_SECONDS,
 } from '../utils/geo';
 import { saveRunSummary } from '../utils/storage';
 
@@ -32,13 +36,25 @@ export function useRunTracker() {
   const [isGpsAccurate, setIsGpsAccurate] = useState(false);
   const [totalPointsCount, setTotalPointsCount] = useState(0);
   const [lastFinishedRun, setLastFinishedRun] = useState<RunSummary | null>(null);
+  const [lastRejectionReason, setLastRejectionReason] = useState<GpsPointRejectionReason>(null);
+  const [lastDiagnosticLog, setLastDiagnosticLog] = useState<GpsDiagnosticLog | null>(null);
 
   // References for mutable state inside intervals & listeners without re-subscribing
   const statusRef = useRef<RunStatus>('idle');
   statusRef.current = status;
 
-  const lastValidCoordRef = useRef<GpsCoordinate | null>(null);
-  const accumulatedDistanceRef = useRef(0);
+  // Separate concepts for GPS tracking:
+  // - lastGpsReadingRef: latest received raw GPS reading
+  // - lastAcceptedCoordRef: last coordinate accepted as a distance anchor (NEVER updated on reject)
+  // - lastAcceptedTimestampRef: timestamp of the accepted anchor
+  // - accumulatedDistanceRef: total accepted running distance
+  // - isPausedRef: current pause state
+  const lastGpsReadingRef = useRef<GpsCoordinate | null>(null);
+  const lastAcceptedCoordRef = useRef<GpsCoordinate | null>(null);
+  const lastAcceptedTimestampRef = useRef<number | null>(null);
+  const accumulatedDistanceRef = useRef<number>(0);
+  const isPausedRef = useRef<boolean>(false);
+
   const elapsedSecondsRef = useRef(0);
   const startTimeRef = useRef<number>(0);
   const recentPointsRef = useRef<GpsCoordinate[]>([]); // Rolling buffer for pace fallback
@@ -72,7 +88,7 @@ export function useRunTracker() {
         elapsedSecondsRef.current += 1;
         setElapsedSeconds(elapsedSecondsRef.current);
 
-        // Update real-time average pace every second
+        // Update real-time average pace every second using active elapsed seconds
         const computedAvg = calculateAveragePace(
           elapsedSecondsRef.current,
           accumulatedDistanceRef.current
@@ -115,7 +131,8 @@ export function useRunTracker() {
   };
 
   /**
-   * GPS Coordinate handler called on every hardware location update
+   * GPS Coordinate handler called on every hardware location update.
+   * Implements stateful acceptance: anchor is only updated when genuine movement is accepted.
    */
   const handleLocationUpdate = useCallback((location: Location.LocationObject) => {
     const coord: GpsCoordinate = {
@@ -128,72 +145,179 @@ export function useRunTracker() {
       timestamp: location.timestamp,
     };
 
-    const isAccurate = isValidGpsPoint(coord);
+    // Store latest received reading regardless of acceptance
+    lastGpsReadingRef.current = coord;
+
+    // Validate estimated horizontal accuracy
+    const isAccurate = isValidGpsPoint(coord, GPS_ACCURACY_THRESHOLD_METERS);
     setIsGpsAccurate(isAccurate);
     setGpsAccuracy(coord.accuracy);
 
-    // If GPS is noisy or run is paused/idle, do not accumulate distance
-    if (!isAccurate || statusRef.current !== 'tracking') {
-      if (statusRef.current === 'paused') {
-        setCurrentSpeedMps(0);
-        setCurrentPace(null);
-      }
+    const rawSpeed = coord.speed !== null && coord.speed >= 0 ? coord.speed : null;
+
+    const recordDiagnostic = (
+      accepted: boolean,
+      rejectionReason: GpsPointRejectionReason,
+      distFromAnchor: number | null,
+      dt: number | null,
+      impSpd: number | null
+    ) => {
+      const log: GpsDiagnosticLog = {
+        latitude: coord.latitude,
+        longitude: coord.longitude,
+        accuracy: coord.accuracy,
+        timestamp: coord.timestamp,
+        distanceFromAnchor: distFromAnchor,
+        elapsedSeconds: dt,
+        impliedSpeed: impSpd,
+        nativeGpsSpeed: rawSpeed,
+        accepted,
+        rejectionReason,
+        accumulatedDistance: accumulatedDistanceRef.current,
+      };
+      setLastRejectionReason(rejectionReason);
+      setLastDiagnosticLog(log);
+    };
+
+    // 1. Verify GPS accuracy: reject null, <=0, or worse than configured threshold
+    if (coord.accuracy === null || coord.accuracy === undefined || coord.accuracy <= 0) {
+      recordDiagnostic(false, 'INVALID_ACCURACY', null, null, null);
       return;
     }
 
-    setTotalPointsCount((prev) => prev + 1);
+    if (!isAccurate) {
+      recordDiagnostic(false, 'LOW_ACCURACY', null, null, null);
+      return;
+    }
 
-    // Track Doppler speed
-    const rawSpeed = coord.speed !== null && coord.speed >= 0 ? coord.speed : null;
+    // 2. Check paused state: do NOT accumulate distance while paused
+    if (isPausedRef.current || statusRef.current === 'paused') {
+      setCurrentSpeedMps(0);
+      setCurrentPace(null);
+      recordDiagnostic(false, 'PAUSED', null, null, null);
+      return;
+    }
+
+    // If not tracking (idle/finished), do not accumulate distance
+    if (statusRef.current !== 'tracking') {
+      return;
+    }
+
+    // 3. Validate timestamp anomalies: reject missing, non-positive, or out-of-order timestamps
+    if (!coord.timestamp || isNaN(coord.timestamp) || coord.timestamp <= 0) {
+      recordDiagnostic(false, 'INVALID_TIMESTAMP', null, null, null);
+      return;
+    }
+
+    if (
+      lastAcceptedTimestampRef.current !== null &&
+      coord.timestamp <= lastAcceptedTimestampRef.current
+    ) {
+      recordDiagnostic(false, 'INVALID_TIMESTAMP', null, null, null);
+      return;
+    }
+
+    // Track peak native speed
     if (rawSpeed !== null && rawSpeed > maxSpeedRef.current) {
       maxSpeedRef.current = rawSpeed;
     }
 
-    // Maintain a rolling window of recent points (last 10 seconds)
+    // Maintain rolling window for instantaneous pace (last 10 seconds)
     const now = coord.timestamp;
     recentPointsRef.current = [
       ...recentPointsRef.current.filter((p) => now - p.timestamp <= 10000),
       coord,
     ];
 
-    // Compute instantaneous pace: prioritize Doppler hardware speed
+    // Compute instantaneous pace: prioritize Doppler hardware speed, fallback to rolling window
     let calculatedPace = speedToPace(rawSpeed);
     if (calculatedPace === null && rawSpeed === null) {
       calculatedPace = computeRollingPace(recentPointsRef.current);
     }
-
     setCurrentSpeedMps(rawSpeed ?? 0);
     setCurrentPace(calculatedPace);
 
-    // Accumulate distance with stationary drift suppression
-    const lastCoord = lastValidCoordRef.current;
-    if (lastCoord) {
-      const deltaMeters = calculateHaversineDistance(
-        lastCoord.latitude,
-        lastCoord.longitude,
-        coord.latitude,
-        coord.longitude
-      );
+    // 4. If no accepted anchor exists (initial start, post-resume, post-gap), establish new anchor
+    if (lastAcceptedCoordRef.current === null || lastAcceptedTimestampRef.current === null) {
+      lastAcceptedCoordRef.current = coord;
+      lastAcceptedTimestampRef.current = coord.timestamp;
+      setTotalPointsCount((prev) => prev + 1);
+      recordDiagnostic(true, null, 0, 0, 0);
+      return;
+    }
 
-      // Stationary check: only accumulate if speed >= 0.5 m/s or delta > 2.0 meters
-      const isMoving =
-        (rawSpeed !== null && rawSpeed >= MIN_SPEED_THRESHOLD_MPS) ||
-        deltaMeters >= MIN_DISTANCE_DELTA_METERS;
+    // 5. Calculate elapsed time from anchor
+    const elapsedFromAnchorSeconds = (coord.timestamp - lastAcceptedTimestampRef.current) / 1000;
 
-      if (isMoving && deltaMeters < 100) {
-        accumulatedDistanceRef.current += deltaMeters;
-        setDistanceMeters(accumulatedDistanceRef.current);
+    // Large tracking gap check (signal loss, backgrounding, or extended loss of lock)
+    if (elapsedFromAnchorSeconds > MAX_GPS_GAP_SECONDS) {
+      // Re-establish anchor without inventing straight-line distance across the gap
+      lastAcceptedCoordRef.current = coord;
+      lastAcceptedTimestampRef.current = coord.timestamp;
+      recordDiagnostic(false, 'GPS_GAP', null, elapsedFromAnchorSeconds, null);
+      return;
+    }
 
-        // Kilometer milestone vibration
-        const currentKm = Math.floor(accumulatedDistanceRef.current / 1000);
-        if (currentKm > lastKilometerMilestoneRef.current) {
-          lastKilometerMilestoneRef.current = currentKm;
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-        }
+    // 6. Calculate distance from anchor using Haversine formula
+    const deltaMeters = calculateHaversineDistance(
+      lastAcceptedCoordRef.current.latitude,
+      lastAcceptedCoordRef.current.longitude,
+      coord.latitude,
+      coord.longitude
+    );
+
+    // 7. Calculate implied speed
+    const impliedSpeed = deltaMeters / elapsedFromAnchorSeconds;
+
+    // Sanity check: Reject impossible jump / teleportation (e.g. multipath spike)
+    if (impliedSpeed > MAX_REASONABLE_RUNNING_SPEED_MPS) {
+      recordDiagnostic(false, 'IMPOSSIBLE_SPEED', deltaMeters, elapsedFromAnchorSeconds, impliedSpeed);
+      return;
+    }
+
+    // 8. Ignore small GPS jitter: do NOT update anchor so genuine slow movement builds up!
+    if (deltaMeters < MIN_DISTANCE_DELTA_METERS) {
+      recordDiagnostic(false, 'GPS_JITTER', deltaMeters, elapsedFromAnchorSeconds, impliedSpeed);
+      return;
+    }
+
+    // 9. Stationary drift protection
+    let isStationary = false;
+    if (rawSpeed !== null) {
+      // Doppler speed is available: if speed < 0.35 m/s (~1.26 km/h), user is stationary/drift
+      if (rawSpeed < 0.35) {
+        isStationary = true;
+      } else if (rawSpeed < 0.5 && impliedSpeed < 0.4) {
+        isStationary = true;
+      }
+    } else {
+      // Doppler speed is absent: check if implied speed is unrealistically low for actual movement
+      if (impliedSpeed < 0.35) {
+        isStationary = true;
       }
     }
 
-    lastValidCoordRef.current = coord;
+    if (isStationary) {
+      recordDiagnostic(false, 'STATIONARY_DRIFT', deltaMeters, elapsedFromAnchorSeconds, impliedSpeed);
+      return;
+    }
+
+    // 10. Genuine movement accepted!
+    // Accumulate distance and update accepted anchor
+    accumulatedDistanceRef.current += deltaMeters;
+    lastAcceptedCoordRef.current = coord;
+    lastAcceptedTimestampRef.current = coord.timestamp;
+
+    setDistanceMeters(accumulatedDistanceRef.current);
+    setTotalPointsCount((prev) => prev + 1);
+    recordDiagnostic(true, null, deltaMeters, elapsedFromAnchorSeconds, impliedSpeed);
+
+    // Kilometer milestone vibration
+    const currentKm = Math.floor(accumulatedDistanceRef.current / 1000);
+    if (currentKm > lastKilometerMilestoneRef.current) {
+      lastKilometerMilestoneRef.current = currentKm;
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    }
   }, []);
 
   const startGpsWatch = useCallback(async () => {
@@ -309,12 +433,15 @@ export function useRunTracker() {
     // Ensure GPS watch is running
     await startGpsWatch();
 
-    // Reset session metrics
+    // Reset session metrics and distance anchors
     accumulatedDistanceRef.current = 0;
     elapsedSecondsRef.current = 0;
     lastKilometerMilestoneRef.current = 0;
     maxSpeedRef.current = 0;
-    lastValidCoordRef.current = null;
+    lastGpsReadingRef.current = null;
+    lastAcceptedCoordRef.current = null;
+    lastAcceptedTimestampRef.current = null;
+    isPausedRef.current = false;
     recentPointsRef.current = [];
     startTimeRef.current = Date.now();
 
@@ -325,6 +452,8 @@ export function useRunTracker() {
     setCurrentSpeedMps(0);
     setTotalPointsCount(0);
     setLastFinishedRun(null);
+    setLastRejectionReason(null);
+    setLastDiagnosticLog(null);
 
     setStatus('tracking');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
@@ -334,6 +463,10 @@ export function useRunTracker() {
 
   const pauseRun = () => {
     setStatus('paused');
+    isPausedRef.current = true;
+    // Clear accepted anchor so post-resume establishes a clean fresh anchor
+    lastAcceptedCoordRef.current = null;
+    lastAcceptedTimestampRef.current = null;
     setCurrentPace(null);
     setCurrentSpeedMps(0);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
@@ -341,6 +474,10 @@ export function useRunTracker() {
 
   const resumeRun = () => {
     setStatus('tracking');
+    isPausedRef.current = false;
+    // Clear anchor to guarantee the first post-resume reading becomes the new anchor
+    lastAcceptedCoordRef.current = null;
+    lastAcceptedTimestampRef.current = null;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
   };
 
@@ -377,6 +514,7 @@ export function useRunTracker() {
   const resetRun = () => {
     stopTimer();
     setStatus('idle');
+    isPausedRef.current = false;
     setElapsedSeconds(0);
     setDistanceMeters(0);
     setCurrentPace(null);
@@ -384,9 +522,13 @@ export function useRunTracker() {
     setCurrentSpeedMps(0);
     setTotalPointsCount(0);
     setLastFinishedRun(null);
+    setLastRejectionReason(null);
+    setLastDiagnosticLog(null);
     accumulatedDistanceRef.current = 0;
     elapsedSecondsRef.current = 0;
-    lastValidCoordRef.current = null;
+    lastGpsReadingRef.current = null;
+    lastAcceptedCoordRef.current = null;
+    lastAcceptedTimestampRef.current = null;
     recentPointsRef.current = [];
   };
 
@@ -402,6 +544,8 @@ export function useRunTracker() {
     isGpsReady,
     gpsIssueReason,
     totalValidPoints: totalPointsCount,
+    lastRejectionReason,
+    lastDiagnosticLog,
   };
 
   return {
