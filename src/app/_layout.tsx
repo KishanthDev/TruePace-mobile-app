@@ -1,7 +1,11 @@
 import '../../global.css';
+// Side-effect import: registers the background location task with TaskManager
+// MUST appear before any component that uses useRunTracker mounts.
+import '../tasks/locationTask';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+
 
 export default function RootLayout() {
   return (

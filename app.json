@@ -13,7 +13,9 @@
       "bundleIdentifier": "com.truepace.app",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "TruePace needs access to your location to accurately calculate your running distance and pace.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "TruePace tracks your running workout accurately while your phone is with you."
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "TruePace tracks your running workout accurately while your phone is with you, even when the screen is locked.",
+        "NSLocationAlwaysUsageDescription": "TruePace continues tracking your run in the background when your screen locks.",
+        "UIBackgroundModes": ["location"]
       }
     },
     "android": {
@@ -26,7 +28,10 @@
       },
       "permissions": [
         "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION"
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION"
       ],
       "predictiveBackGestureEnabled": false
     },
@@ -35,7 +40,16 @@
       "bundler": "metro"
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "TruePace tracks your running workout accurately while your phone is with you, even when the screen is locked.",
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
+        }
+      ]
     ]
   }
 }
+
