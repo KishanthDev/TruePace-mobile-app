@@ -46,8 +46,10 @@
         "expo-location",
         {
           "locationAlwaysAndWhenInUsePermission": "TruePace tracks your running workout accurately while your phone is with you, even when the screen is locked.",
+          "isIosBackgroundLocationEnabled": true,
           "isAndroidBackgroundLocationEnabled": true,
-          "isAndroidForegroundServiceEnabled": true
+          "isAndroidForegroundServiceEnabled": true,
+          "androidForegroundServiceIcon": "./assets/android-icon-monochrome.png"
         }
       ]
     ]

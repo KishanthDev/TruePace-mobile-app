@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Platform } from 'react-native';
+import { Platform, PermissionsAndroid } from 'react-native';
 import Constants, { ExecutionEnvironment } from 'expo-constants';
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
@@ -419,6 +419,13 @@ export function useRunTracker() {
         return;
       }
 
+      const isTaskDefined = TaskManager.isTaskDefined(LOCATION_TASK_NAME);
+      if (!isTaskDefined) {
+        console.warn(`[TruePace] Task "${LOCATION_TASK_NAME}" not registered, falling back to foreground watch.`);
+        await startForegroundWatch();
+        return;
+      }
+
       // Check if user granted "Allow all the time" background permission
       const bgPerm = await Location.getBackgroundPermissionsAsync().catch(() => null);
       if (!bgPerm || bgPerm.status !== 'granted') {
@@ -503,6 +510,15 @@ export function useRunTracker() {
     try {
       const servicesEnabled = await checkLocationServices();
       if (!servicesEnabled) return false;
+
+      // On Android 13+ (API 33+), request notification permission so Foreground Service can post ongoing notifications
+      if (Platform.OS === 'android' && Platform.Version >= 33) {
+        try {
+          await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
+        } catch (notifErr) {
+          console.warn('[TruePace] Notification permission request non-fatal error:', notifErr);
+        }
+      }
 
       const { status: permStatus } = await Location.requestForegroundPermissionsAsync();
       const granted = permStatus === 'granted';
