@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Platform, PermissionsAndroid } from 'react-native';
+import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import * as Location from 'expo-location';
-import * as TaskManager from 'expo-task-manager';
 import * as Haptics from 'expo-haptics';
+import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import {
   GpsCoordinate,
   GpsDiagnosticLog,
@@ -25,10 +25,6 @@ import {
   MAX_GPS_GAP_SECONDS,
 } from '../utils/geo';
 import { saveRunSummary } from '../utils/storage';
-import {
-  LOCATION_TASK_NAME,
-  setLocationUpdateHandler,
-} from '../tasks/locationTask';
 
 // ─── Environment Detection ───────────────────────────────────────────────────
 
@@ -404,101 +400,15 @@ export function useRunTracker() {
   }, []);
 
   /**
-   * Background location tracking (Progressive Enhancement).
-   * Fully protected: never throws, never crashes if permissions or OS restrictions prevent it.
+   * Safe location watch manager: ensures the rock-solid high-accuracy foreground
+   * GPS stream is active without spawning crash-prone native background services.
    */
   const startBackgroundWatch = useCallback(async () => {
-    // In Expo Go on Android, background location is explicitly unsupported
-    if (isAndroidExpoGo) {
-      await startForegroundWatch();
-      return;
-    }
-
-    try {
-      const canBackground = await TaskManager.isAvailableAsync().catch(() => false);
-      if (!canBackground) {
-        await startForegroundWatch();
-        return;
-      }
-
-      const isTaskDefined = TaskManager.isTaskDefined(LOCATION_TASK_NAME);
-      if (!isTaskDefined) {
-        console.warn(`[TruePace] Task "${LOCATION_TASK_NAME}" not registered, falling back to foreground watch.`);
-        await startForegroundWatch();
-        return;
-      }
-
-      // Check if user granted "Allow all the time" background permission
-      const bgPerm = await Location.getBackgroundPermissionsAsync().catch(() => null);
-      if (!bgPerm || bgPerm.status !== 'granted') {
-        // Without background permission, calling startLocationUpdatesAsync on Android throws E_LOCATION_UNAUTHORIZED.
-        // Fall back gracefully to foreground tracking — prevents APK crash!
-        await startForegroundWatch();
-        return;
-      }
-
-      // ── CRITICAL: On Android 13+ (API 33+), the foreground service REQUIRES the
-      // POST_NOTIFICATIONS permission to post its mandatory ongoing notification.
-      // Without it, startLocationUpdatesAsync throws a fatal ForegroundServiceStartNotAllowedException
-      // that can kill the process in preview/production builds. Request it first.
-      if (Platform.OS === 'android' && Platform.Version >= 33) {
-        try {
-          await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
-        } catch (notifErr) {
-          console.warn('[TruePace] Notification permission request non-fatal error:', notifErr);
-        }
-      }
-
-      setLocationUpdateHandler(handleLocationUpdate);
-
-      const alreadyRunning = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME).catch(() => false);
-      if (!alreadyRunning) {
-        try {
-          await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
-            accuracy: Location.Accuracy.BestForNavigation,
-            timeInterval: 1000,
-            distanceInterval: 0,
-            foregroundService: {
-              notificationTitle: 'TruePace — Recording',
-              notificationBody: 'Tracking your active run',
-              notificationColor: '#22c55e',
-            },
-            activityType: Location.ActivityType.Fitness,
-            pausesUpdatesAutomatically: false,
-            showsBackgroundLocationIndicator: true,
-          });
-        } catch (fgServiceErr) {
-          // Foreground service failed to start (e.g. notification blocked on Android 14+).
-          // This is non-fatal — fall back to foreground-only tracking which still works
-          // perfectly fine when the screen is on. Do NOT rethrow.
-          console.warn('[TruePace] Foreground service start failed (non-fatal), using foreground watch only:', fgServiceErr);
-          isBackgroundTrackingActiveRef.current = false;
-          await startForegroundWatch();
-          return;
-        }
-      }
-      isBackgroundTrackingActiveRef.current = true;
-      // Also maintain foreground watch for real-time responsiveness when screen is visible
-      await startForegroundWatch();
-    } catch (err) {
-      console.warn('[TruePace] Background location failed to start, falling back to foreground:', err);
-      isBackgroundTrackingActiveRef.current = false;
-      await startForegroundWatch();
-    }
-  }, [handleLocationUpdate, startForegroundWatch]);
+    await startForegroundWatch();
+  }, [startForegroundWatch]);
 
   const stopBackgroundWatch = useCallback(async () => {
-    setLocationUpdateHandler(null);
-    isBackgroundTrackingActiveRef.current = false;
-    if (isAndroidExpoGo) return;
-    try {
-      const isRunning = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME).catch(() => false);
-      if (isRunning) {
-        await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME).catch(() => {});
-      }
-    } catch {
-      // ignore
-    }
+    // No-op for foreground-only architecture
   }, []);
 
   // ── Boot: check permissions and start foreground GPS ─────────────────────────
@@ -524,7 +434,6 @@ export function useRunTracker() {
     return () => {
       isMounted = false;
       stopForegroundWatch();
-      setLocationUpdateHandler(null);
       stopTimer();
     };
   }, [checkLocationServices, startForegroundWatch, stopForegroundWatch]);
@@ -535,30 +444,12 @@ export function useRunTracker() {
       const servicesEnabled = await checkLocationServices();
       if (!servicesEnabled) return false;
 
-      // On Android 13+ (API 33+), request notification permission so Foreground Service can post ongoing notifications
-      if (Platform.OS === 'android' && Platform.Version >= 33) {
-        try {
-          await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
-        } catch (notifErr) {
-          console.warn('[TruePace] Notification permission request non-fatal error:', notifErr);
-        }
-      }
-
       const { status: permStatus } = await Location.requestForegroundPermissionsAsync();
       const granted = permStatus === 'granted';
       setHasPermission(granted);
 
       if (granted) {
         await startForegroundWatch();
-
-        // On standalone builds (not Expo Go Android), request background permission
-        if (!isAndroidExpoGo) {
-          try {
-            await Location.requestBackgroundPermissionsAsync();
-          } catch {
-            // Non-fatal if user declines background
-          }
-        }
       }
       return granted;
     } catch (err) {
@@ -650,6 +541,7 @@ export function useRunTracker() {
       setLastDiagnosticLog(null);
 
       setStatus('tracking');
+      activateKeepAwakeAsync().catch(() => {});
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
       startTimer();
       return { success: true };
@@ -662,6 +554,7 @@ export function useRunTracker() {
   };
 
   const pauseRun = () => {
+    deactivateKeepAwake().catch(() => {});
     pauseStartTimeRef.current = Date.now();
     setStatus('paused');
     isPausedRef.current = true;
@@ -681,6 +574,7 @@ export function useRunTracker() {
     }
 
     setStatus('tracking');
+    activateKeepAwakeAsync().catch(() => {});
     isPausedRef.current = false;
 
     lastAcceptedCoordRef.current = null;
@@ -691,6 +585,7 @@ export function useRunTracker() {
   };
 
   const finishRun = async (): Promise<RunSummary | null> => {
+    deactivateKeepAwake().catch(() => {});
     stopTimer();
 
     if (pauseStartTimeRef.current !== null) {
@@ -726,6 +621,7 @@ export function useRunTracker() {
   };
 
   const resetRun = async () => {
+    deactivateKeepAwake().catch(() => {});
     stopTimer();
 
     await stopBackgroundWatch();
