@@ -15,7 +15,9 @@
         "NSLocationWhenInUseUsageDescription": "TruePace needs access to your location to accurately calculate your running distance and pace.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "TruePace tracks your running workout accurately while your phone is with you, even when the screen is locked.",
         "NSLocationAlwaysUsageDescription": "TruePace continues tracking your run in the background when your screen locks.",
-        "UIBackgroundModes": ["location"]
+        "UIBackgroundModes": [
+          "location"
+        ]
       }
     },
     "android": {
@@ -52,7 +54,12 @@
           "androidForegroundServiceIcon": "./assets/android-icon-monochrome.png"
         }
       ]
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "a56a2e38-8e51-45aa-bbc8-a79e7f4e0dde"
+      }
+    }
   }
 }
-
