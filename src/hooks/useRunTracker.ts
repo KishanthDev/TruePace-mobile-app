@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Platform, PermissionsAndroid } from 'react-native';
-import Constants, { ExecutionEnvironment } from 'expo-constants';
+import Constants from 'expo-constants';
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import * as Haptics from 'expo-haptics';
@@ -32,9 +32,11 @@ import {
 
 // ─── Environment Detection ───────────────────────────────────────────────────
 
-const isExpoGo =
-  Constants.executionEnvironment === ExecutionEnvironment.StoreClient ||
-  Constants.appOwnership === 'expo';
+// SDK 57+: executionEnvironment is 'storeClient' in Expo Go, 'standalone'/'bare'
+// in production/preview builds. Constants.appOwnership was REMOVED in SDK 50 and
+// ExecutionEnvironment enum values are also deprecated — use string comparison.
+const expoEnv: string = (Constants.executionEnvironment as string) ?? '';
+const isExpoGo = expoEnv === 'storeClient';
 const isAndroidExpoGo = isExpoGo && Platform.OS === 'android';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -435,23 +437,45 @@ export function useRunTracker() {
         return;
       }
 
+      // ── CRITICAL: On Android 13+ (API 33+), the foreground service REQUIRES the
+      // POST_NOTIFICATIONS permission to post its mandatory ongoing notification.
+      // Without it, startLocationUpdatesAsync throws a fatal ForegroundServiceStartNotAllowedException
+      // that can kill the process in preview/production builds. Request it first.
+      if (Platform.OS === 'android' && Platform.Version >= 33) {
+        try {
+          await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
+        } catch (notifErr) {
+          console.warn('[TruePace] Notification permission request non-fatal error:', notifErr);
+        }
+      }
+
       setLocationUpdateHandler(handleLocationUpdate);
 
       const alreadyRunning = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME).catch(() => false);
       if (!alreadyRunning) {
-        await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
-          accuracy: Location.Accuracy.BestForNavigation,
-          timeInterval: 1000,
-          distanceInterval: 0,
-          foregroundService: {
-            notificationTitle: 'TruePace — Recording',
-            notificationBody: 'Tracking your active run',
-            notificationColor: '#22c55e',
-          },
-          activityType: Location.ActivityType.Fitness,
-          pausesUpdatesAutomatically: false,
-          showsBackgroundLocationIndicator: true,
-        });
+        try {
+          await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
+            accuracy: Location.Accuracy.BestForNavigation,
+            timeInterval: 1000,
+            distanceInterval: 0,
+            foregroundService: {
+              notificationTitle: 'TruePace — Recording',
+              notificationBody: 'Tracking your active run',
+              notificationColor: '#22c55e',
+            },
+            activityType: Location.ActivityType.Fitness,
+            pausesUpdatesAutomatically: false,
+            showsBackgroundLocationIndicator: true,
+          });
+        } catch (fgServiceErr) {
+          // Foreground service failed to start (e.g. notification blocked on Android 14+).
+          // This is non-fatal — fall back to foreground-only tracking which still works
+          // perfectly fine when the screen is on. Do NOT rethrow.
+          console.warn('[TruePace] Foreground service start failed (non-fatal), using foreground watch only:', fgServiceErr);
+          isBackgroundTrackingActiveRef.current = false;
+          await startForegroundWatch();
+          return;
+        }
       }
       isBackgroundTrackingActiveRef.current = true;
       // Also maintain foreground watch for real-time responsiveness when screen is visible
