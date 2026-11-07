@@ -23,6 +23,8 @@ export default function RunHudScreen() {
     telemetry,
     hasPermission,
     lastFinishedRun,
+    isAudioCuesEnabled,
+    toggleAudioCues,
     requestPermission,
     startRun,
     pauseRun,
@@ -40,7 +42,6 @@ export default function RunHudScreen() {
     distanceMeters,
     currentPaceSecondsPerKm,
     avgPaceSecondsPerKm,
-    isGpsAccurate,
     isGpsReady,
     gpsIssueReason,
     gpsAccuracyMeters,
@@ -87,14 +88,34 @@ export default function RunHudScreen() {
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            onPress={() => setHistoryVisible(true)}
-            className="px-3 py-1 rounded-full bg-zinc-900 border border-zinc-800"
-          >
-            <Text className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">
-              History
-            </Text>
-          </TouchableOpacity>
+          <View className="flex-row items-center space-x-2 gap-2">
+            <TouchableOpacity
+              onPress={toggleAudioCues}
+              activeOpacity={0.7}
+              className={`px-2.5 py-1 rounded-full border ${
+                isAudioCuesEnabled
+                  ? 'bg-emerald-950/40 border-emerald-500/40'
+                  : 'bg-zinc-900 border-zinc-800'
+              }`}
+            >
+              <Text
+                className={`text-[11px] font-bold ${
+                  isAudioCuesEnabled ? 'text-emerald-400' : 'text-zinc-500'
+                }`}
+              >
+                {isAudioCuesEnabled ? 'AUDIO ON' : 'AUDIO OFF'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => setHistoryVisible(true)}
+              className="px-3 py-1 rounded-full bg-zinc-900 border border-zinc-800"
+            >
+              <Text className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">
+                History
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Permission Banner if not granted */}
@@ -154,6 +175,47 @@ export default function RunHudScreen() {
                 </Text>
               </View>
             </View>
+
+            {/* Kilometer Splits Breakdown */}
+            {lastFinishedRun.splits && lastFinishedRun.splits.length > 0 && (
+              <View className="w-full mt-4 p-4 rounded-3xl bg-zinc-950 border border-zinc-900">
+                <Text className="text-[11px] font-extrabold tracking-widest text-zinc-500 uppercase mb-3">
+                  Kilometer Splits
+                </Text>
+                {(() => {
+                  const fastest = Math.min(...lastFinishedRun.splits);
+                  return lastFinishedRun.splits.map((splitTime, idx) => {
+                    const isFastest = splitTime === fastest && lastFinishedRun.splits!.length > 1;
+                    return (
+                      <View
+                        key={idx}
+                        className="flex-row items-center justify-between py-2 border-b border-zinc-900/60"
+                      >
+                        <View className="flex-row items-center">
+                          <Text className="text-xs font-bold text-zinc-400">
+                            KM {idx + 1}
+                          </Text>
+                          {isFastest && (
+                            <View className="ml-2 px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30">
+                              <Text className="text-[9px] font-black text-emerald-400 uppercase">
+                                FASTEST
+                              </Text>
+                            </View>
+                          )}
+                        </View>
+                        <Text
+                          className={`text-sm font-black ${
+                            isFastest ? 'text-emerald-400' : 'text-white'
+                          }`}
+                        >
+                          {formatPace(splitTime)}/km
+                        </Text>
+                      </View>
+                    );
+                  });
+                })()}
+              </View>
+            )}
           </ScrollView>
         ) : (
           /* Active Live In-Run HUD */
@@ -170,7 +232,7 @@ export default function RunHudScreen() {
                 }`}
               >
                 {status === 'tracking'
-                  ? 'LIVE HUD'
+                  ? 'TRACKING • BG ON'
                   : status === 'paused'
                   ? 'PAUSED'
                   : 'READY'}

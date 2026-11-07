@@ -64,5 +64,24 @@ Docs: https://docs.expo.dev/eas/index.md
   - **Diagnostic Telemetry**: Track rejection reasons (`INVALID_ACCURACY`, `LOW_ACCURACY`, `GPS_JITTER`, `IMPOSSIBLE_SPEED`, `INVALID_TIMESTAMP`, `PAUSED`, `GPS_GAP`, `STATIONARY_DRIFT`).
   - **Local Cache**: Save completed runs to local persistent storage for history view.
   - **GPS Gatekeeper**: "START RUN" is hard-locked in "WAITING FOR GPS" state until device location services are enabled, permissions granted, and satellite accuracy is verified. Tapping while locked triggers the GpsAlertModal with direct resolution pathways.
+  - **Background Tracking Architecture**:
+    - **Dual-Stream GPS**: `startRun()` starts BOTH `watchPositionAsync` (foreground) AND `startLocationUpdatesAsync` (background) concurrently. `processLocation()` deduplicates via `lastProcessedTimestamp` — no double-counting.
+    - **AppState Handoff**: When app goes to `background`, foreground watch is stopped and background task takes over. When app returns to `active`, foreground watch is restarted. Seamless GPS continuity across screen lock/unlock.
+    - **Session Persistence**: Active session snapshot saved to AsyncStorage on every accepted point. On cold restart, session is restored (if < 12 hours old) and both GPS streams are restarted.
+    - **Foreground Service**: Android foreground service notification keeps the process alive with `killServiceOnDestroy: false`.
+    - **Dedup Guard Reset**: `lastProcessedTimestamp` is reset on `startRun()` to prevent first GPS point rejection.
+  - **Per-Kilometer Splits**:
+    - **Milestone Detection**: When `accumulatedDistance` crosses a whole kilometer (`Math.floor(distance / 1000) > lastKilometerMilestone`), split duration is computed from active elapsed seconds (`activeSeconds - splitStartActiveSeconds`).
+    - **Split Preservation**: Stored in `splits: number[]` on `RunSummary` and persisted during active run via `PersistedActiveSession` (`splits`, `splitStartActiveSeconds`).
+    - **UI Presentation**: Finished run summary and history cards display all kilometer splits with fastest split highlighted with emerald accent and badge.
+  - **Audio Voice Cues**:
+    - **Engine**: Built with `expo-speech` in `AudioCoach` singleton.
+    - **Announcements**: Spoken voice cues on run events (start, pause, resume, finish) and automatic per-kilometer milestones detailing split time and average pace.
+    - **Persistence & Control**: User preference toggle (`AUDIO ON` / `AUDIO OFF`) in HUD header, persisted to AsyncStorage.
+  - **Live Lock Screen Notification**:
+    - **Engine**: Built with `expo-notifications` in `LiveNotificationService` singleton.
+    - **Channel Configuration**: Low-importance Android notification channel with `lockscreenVisibility: PUBLIC` for silent, vibration-free live telemetry updates visible directly on the lock screen and notification tray.
+    - **Real-Time Delivery**: Updates metrics (KM distance, active elapsed time, current pace) on every accepted coordinate, throttled to preserve battery. Dynamically reflects tracking and paused states.
+    - **Lifecycle**: Dismissed automatically on run finish or reset.
 
 

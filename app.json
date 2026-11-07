@@ -31,7 +31,12 @@
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
-        "VIBRATE"
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION",
+        "WAKE_LOCK",
+        "VIBRATE",
+        "POST_NOTIFICATIONS"
       ],
       "predictiveBackGestureEnabled": false
     },
@@ -44,7 +49,11 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "TruePace tracks your running workout accurately while your phone is with you."
+          "isIosBackgroundLocationEnabled": true,
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true,
+          "locationAlwaysAndWhenInUsePermission": "TruePace tracks your running workout accurately while your phone is with you, even when the screen is locked.",
+          "locationWhenInUsePermission": "TruePace needs access to your location to accurately calculate your running distance and pace."
         }
       ]
     ],

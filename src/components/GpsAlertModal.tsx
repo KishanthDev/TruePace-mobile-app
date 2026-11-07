@@ -5,7 +5,6 @@ import {
   Text,
   TouchableOpacity,
   Linking,
-  Platform,
 } from 'react-native';
 import { GpsIssueReason } from '../types/tracking';
 
@@ -42,7 +41,7 @@ export const GpsAlertModal: React.FC<GpsAlertModalProps> = ({
           badge: 'PERMISSION REQUIRED',
           badgeColor: 'bg-amber-500/20 border-amber-500/50 text-amber-400',
           message:
-            'Location access is required so TruePace can track your workout accurately in real-time.',
+            'Location access is required so TruePace can track your workout accurately in real-time, including when your screen is locked. Please select "Allow all the time" or "While using the app" with precise location enabled.',
           actionLabel: 'Grant Permission',
           onAction: async () => {
             const granted = await onRequestPermission();

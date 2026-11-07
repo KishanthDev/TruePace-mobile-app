@@ -51,6 +51,7 @@ export interface RunSummary {
   avgPaceSecondsPerKm: number | null;
   bestPaceSecondsPerKm: number | null;
   maxSpeedMps: number;
+  splits?: number[]; // Per-km split times in seconds (splits[0] = time for km 1, etc.)
 }
 
 export interface TrackingTelemetry {
@@ -66,5 +67,4 @@ export interface TrackingTelemetry {
   gpsIssueReason: GpsIssueReason;
   totalValidPoints: number;
   lastRejectionReason?: GpsPointRejectionReason;
-  lastDiagnosticLog?: GpsDiagnosticLog | null;
 }

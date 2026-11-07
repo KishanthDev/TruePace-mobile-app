@@ -1,4 +1,5 @@
 import '../../global.css';
+import '../services/backgroundLocationTask';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';

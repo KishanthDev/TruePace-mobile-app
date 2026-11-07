@@ -23,15 +23,18 @@ export const RunHistoryModal: React.FC<RunHistoryModalProps> = ({
   const insets = useSafeAreaInsets();
   const [runs, setRuns] = useState<RunSummary[]>([]);
 
-  const loadHistory = async () => {
-    const list = await getRunHistory();
-    setRuns(list);
-  };
-
   useEffect(() => {
+    let isMounted = true;
     if (visible) {
-      loadHistory();
+      getRunHistory().then((list) => {
+        if (isMounted) {
+          setRuns(list);
+        }
+      });
     }
+    return () => {
+      isMounted = false;
+    };
   }, [visible]);
 
   const handleClear = async () => {
@@ -124,6 +127,42 @@ export const RunHistoryModal: React.FC<RunHistoryModalProps> = ({
                       </Text>
                     </View>
                   </View>
+
+                  {/* Kilometer Splits */}
+                  {item.splits && item.splits.length > 0 && (
+                    <View className="mt-3 pt-3 border-t border-zinc-800/50">
+                      <Text className="text-[10px] font-bold tracking-wider text-zinc-500 uppercase mb-2">
+                        Kilometer Splits
+                      </Text>
+                      <View className="flex-row flex-wrap gap-1.5">
+                        {(() => {
+                          const fastest = Math.min(...item.splits);
+                          return item.splits.map((split, sIdx) => {
+                            const isFast = split === fastest && item.splits!.length > 1;
+                            return (
+                              <View
+                                key={sIdx}
+                                className={`px-2.5 py-1 rounded-lg border ${
+                                  isFast
+                                    ? 'bg-emerald-950/40 border-emerald-500/40'
+                                    : 'bg-zinc-950 border-zinc-800'
+                                }`}
+                              >
+                                <Text
+                                  className={`text-[11px] font-bold ${
+                                    isFast ? 'text-emerald-400' : 'text-zinc-300'
+                                  }`}
+                                >
+                                  KM {sIdx + 1}: {formatPace(split)}
+                                  {isFast ? ' ★' : ''}
+                                </Text>
+                              </View>
+                            );
+                          });
+                        })()}
+                      </View>
+                    </View>
+                  )}
                 </View>
               )}
             />
