@@ -5,6 +5,7 @@ import {
   isValidGpsPoint,
   speedToPace,
   calculateAveragePace,
+  isStationaryReading,
   formatPace,
   formatDistanceKm,
   formatDuration,
@@ -145,5 +146,79 @@ describe('Geo Utilities — String Formatting', () => {
     assert.equal(formatDuration(305), '05:05');
     assert.equal(formatDuration(3600), '1:00:00');
     assert.equal(formatDuration(3665), '1:01:05');
+  });
+});
+
+describe('Geo Utilities — Stationary Drift & Multipath Protection', () => {
+  test('rejects indoor jitter when Doppler speed confirms stationary (< 0.55 m/s)', () => {
+    // Typical indoor room scenario: Doppler speed is 0.05 m/s, but coordinate bounced 3.5m in 1s
+    const isStationary = isStationaryReading({
+      rawSpeed: 0.05,
+      impliedSpeed: 3.5,
+      deltaMeters: 3.5,
+      accuracy: 12,
+      isStartOfRun: false,
+    });
+    assert.equal(isStationary, true);
+  });
+
+  test('rejects indoor jitter when Doppler is null and jump is inside accuracy circle', () => {
+    // Indoor phone without Doppler speed: 3.2m jump inside 14m accuracy envelope
+    const isStationary = isStationaryReading({
+      rawSpeed: null,
+      impliedSpeed: 3.2,
+      deltaMeters: 3.2,
+      accuracy: 14,
+      isStartOfRun: false,
+    });
+    assert.equal(isStationary, true);
+  });
+
+  test('rejects initial start-of-run fidgeting before runner takes first genuine step', () => {
+    // Runner standing still in a room when pressing START RUN
+    const isStationary = isStationaryReading({
+      rawSpeed: 0.1,
+      impliedSpeed: 2.5,
+      deltaMeters: 2.5,
+      accuracy: 10,
+      isStartOfRun: true,
+    });
+    assert.equal(isStationary, true);
+  });
+
+  test('accepts genuine running movement outdoors (Doppler confirmed)', () => {
+    // Runner jogging outdoors at 2.8 m/s (~10 km/h) with 2.8m delta in 1s
+    const isStationary = isStationaryReading({
+      rawSpeed: 2.8,
+      impliedSpeed: 2.8,
+      deltaMeters: 2.8,
+      accuracy: 5,
+      isStartOfRun: false,
+    });
+    assert.equal(isStationary, false);
+  });
+
+  test('accepts genuine start-of-run acceleration when runner starts jogging', () => {
+    // Runner starts jogging at 2.2 m/s
+    const isStationary = isStationaryReading({
+      rawSpeed: 2.2,
+      impliedSpeed: 2.2,
+      deltaMeters: 2.5,
+      accuracy: 6,
+      isStartOfRun: true,
+    });
+    assert.equal(isStationary, false);
+  });
+
+  test('suppresses stationary drift when runner stops at a traffic light', () => {
+    // Runner halted at a red light: Doppler speed drops to 0.1 m/s, jitter is 2.8m
+    const isStationary = isStationaryReading({
+      rawSpeed: 0.1,
+      impliedSpeed: 2.8,
+      deltaMeters: 2.8,
+      accuracy: 8,
+      isStartOfRun: false,
+    });
+    assert.equal(isStationary, true);
   });
 });

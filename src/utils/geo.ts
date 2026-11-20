@@ -48,6 +48,68 @@ export function isValidGpsPoint(
 }
 
 /**
+ * Parameters for evaluating whether a GPS coordinate reading represents stationary drift/jitter.
+ */
+export interface StationaryEvaluationParams {
+  rawSpeed: number | null; // Native GNSS Doppler speed (m/s)
+  impliedSpeed: number; // deltaMeters / elapsedSeconds
+  deltaMeters: number; // Distance from anchor
+  accuracy: number | null; // Estimated horizontal accuracy (meters)
+  isStartOfRun?: boolean; // True if accumulatedDistance is currently 0
+}
+
+/**
+ * Multi-layer evaluation to determine if a GPS coordinate reading is stationary drift/jitter.
+ * Suppresses indoor multipath reflections, stationary waiting jitter, and initial ghost mileage.
+ */
+export function isStationaryReading(params: StationaryEvaluationParams): boolean {
+  const { rawSpeed, impliedSpeed, deltaMeters, accuracy, isStartOfRun } = params;
+
+  // 1. Doppler Speed Authority:
+  // If the GNSS receiver's native Doppler frequency shift reports < 0.55 m/s (~2.0 km/h),
+  // the device is stationary or barely shuffling.
+  // Never override Doppler stillness with a small coordinate jump (< 25m), which is almost
+  // always indoor multipath reflection or satellite constellation reconfiguration.
+  if (rawSpeed !== null) {
+    if (rawSpeed < 0.55) {
+      if (deltaMeters < 25.0) {
+        return true;
+      }
+    }
+  } else {
+    // 2. Fallback when Doppler speed is unavailable (indoor / degraded GNSS):
+    // Human running is >= 1.8 m/s (~6.5 km/h). Walking is >= 1.0 m/s.
+    // Anything below 0.75 m/s (~2.7 km/h) is stationary drift.
+    if (impliedSpeed < 0.75) {
+      return true;
+    }
+
+    // 3. Accuracy Uncertainty Circle:
+    // Any coordinate displacement inside the GPS error envelope without Doppler confirmation
+    // is mathematically indistinguishable from noise.
+    const uncertaintyRadius = accuracy ?? GPS_ACCURACY_THRESHOLD_METERS;
+    if (deltaMeters < Math.max(MIN_DISTANCE_DELTA_METERS, uncertaintyRadius * 0.5)) {
+      return true;
+    }
+  }
+
+  // 4. Start-of-Run Confidence Gate:
+  // When a workout has just begun (accumulatedDistance == 0), prevent the initial 1-3 seconds
+  // of room/desk jitter from ticking up 0.01 km before the user even takes their first step.
+  if (isStartOfRun) {
+    const isConfirmedMoving =
+      (rawSpeed !== null && rawSpeed >= 0.7) ||
+      (rawSpeed === null && impliedSpeed >= 1.2 && deltaMeters >= Math.max(4.0, (accuracy ?? 15) * 0.5));
+
+    if (!isConfirmedMoving) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
  * Computes instantaneous pace in seconds per kilometer from Doppler speed (m/s).
  * Returns null if stationary or invalid.
  */

@@ -17,6 +17,7 @@ import {
   isValidGpsPoint,
   speedToPace,
   calculateAveragePace,
+  isStationaryReading,
   MIN_DISTANCE_DELTA_METERS,
   GPS_ACCURACY_THRESHOLD_METERS,
   GPS_ACCURACY_FALLBACK_THRESHOLD_METERS,
@@ -35,7 +36,6 @@ export const BACKGROUND_LOCATION_TASK = 'TRUEPACE_BACKGROUND_LOCATION_TASK';
 const ACTIVE_RUN_STORAGE_KEY = '@truepace_active_run_v1';
 const SPEED_BUFFER_SIZE = 5;
 const ADAPTIVE_ACCURACY_TRIGGER = 5;
-const DOPPLER_ZERO_IMPLIED_OVERRIDE_MPS = 1.0;
 
 export const LOCATION_TASK_OPTIONS: Location.LocationTaskOptions = {
   accuracy: Location.Accuracy.BestForNavigation,
@@ -483,23 +483,13 @@ export class TrackingEngine {
     }
 
     // ── Step 9: STATIONARY_DRIFT protection ──────────────────────────────────
-    let isStationary = false;
-
-    if (rawSpeed !== null) {
-      if (rawSpeed < 0.35) {
-        if (impliedSpeed > DOPPLER_ZERO_IMPLIED_OVERRIDE_MPS) {
-          isStationary = false;
-        } else {
-          isStationary = true;
-        }
-      } else if (rawSpeed < 0.5 && impliedSpeed < 0.4) {
-        isStationary = true;
-      }
-    } else {
-      if (impliedSpeed < 0.35) {
-        isStationary = true;
-      }
-    }
+    const isStationary = isStationaryReading({
+      rawSpeed,
+      impliedSpeed,
+      deltaMeters,
+      accuracy: coord.accuracy,
+      isStartOfRun: this.accumulatedDistance === 0,
+    });
 
     if (isStationary) {
       recordDiagnostic(

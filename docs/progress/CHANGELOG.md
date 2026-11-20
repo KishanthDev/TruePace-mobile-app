@@ -1,5 +1,23 @@
 # TruePace — Engineering Changelog
 
+## [Stationary Drift Hardening & Multipath Fix] — 2026-11-20
+
+### Fixed
+- **DEF-03 (High Severity — Indoor / Enclosed Room Stationary GPS Jitter)**:
+  - **Issue**: Clicking "Start Run" while sitting or standing still in an enclosed room caused `0.01 km` (10 meters) to accumulate within seconds due to multipath coordinate reflections and an aggressive Doppler override.
+  - **Root Cause**:
+    1. `DOPPLER_ZERO_IMPLIED_OVERRIDE_MPS = 1.0` allowed noisy 3–5m indoor coordinate jumps to override the GNSS receiver's native Doppler speed of 0.0 m/s and claim the runner was moving at 3–5 m/s.
+    2. Small coordinate jumps (< 15m) were accepted without checking if they were inside the estimated horizontal accuracy circle.
+    3. Absence of a start-of-run motion confidence gate allowed initial room jitter to increment distance before genuine locomotion began.
+  - **Resolution**:
+    1. Implemented `isStationaryReading()` pure function in `src/utils/geo.ts`.
+    2. Native Doppler speed authority: If GNSS Doppler speed is `< 0.55 m/s` (~2.0 km/h), small coordinate jumps (< 25m) are strictly suppressed as `STATIONARY_DRIFT`.
+    3. Accuracy uncertainty envelope: If Doppler speed is unavailable (null), coordinate movements within the accuracy error radius (`deltaMeters < accuracy * 0.5`) are treated as stationary noise.
+    4. Start-of-run confidence gate: The first meters of a session are locked until the user demonstrates confirmed motion ($\ge 0.7\text{ m/s}$ Doppler or displacement exceeding the accuracy radius).
+    5. Added 6 comprehensive unit tests in `tests/geo.test.ts` (all 62 project tests passing).
+
+---
+
 ## [Phase 5 Complete] — 2026-11-20
 
 ### Added
