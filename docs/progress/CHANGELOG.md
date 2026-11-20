@@ -1,5 +1,21 @@
 # TruePace — Engineering Changelog
 
+## [Phase 5 Complete] — 2026-11-20
+
+### Added
+- **Predictive Workload & ACWR Modeling Engine (`src/utils/workload.ts`)**:
+  - Acute:Chronic Workload Ratio (ACWR) calculator comparing 7-day volume vs 28-day chronic volume.
+  - Evidence-based risk categorizations: `undertraining` (< 0.8), `optimal` sweet spot (0.8 - 1.3), `overreaching` (1.3 - 1.5), and `danger` surge (> 1.5).
+  - Pete Riegel race time predictor ($T_2 = T_1 \times (D_2 / D_1)^{1.06}$) accurately estimating 5K, 10K, Half Marathon, and Full Marathon times and target paces based on personal performance baselines.
+  - Weekly moving volume progression tracker with week-over-week percentage change indicators.
+  - 6 unit tests in `tests/workload.test.ts` (all 56 project tests passing).
+- **Run History Modal Analytics Dashboard (`src/components/RunHistoryModal.tsx`)**:
+  - Training Load & ACWR card with dynamic color badges and actionable coaching guidance.
+  - 7-Day volume counter with week-over-week growth percentage.
+  - Projected Race Times table rendering 5K, 10K, Half, and Full marathon estimates with tabular typography and user unit preferences.
+
+---
+
 ## [Phase 4 Complete] — 2026-11-20
 
 ### Added

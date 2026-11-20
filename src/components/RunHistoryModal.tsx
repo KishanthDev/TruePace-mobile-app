@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Modal,
   View,
@@ -23,6 +23,11 @@ import {
   generateTcx,
   generateHistoryBackupJson,
 } from '../utils/gpxSerializer';
+import {
+  calculateAcwr,
+  predictRaceTimes,
+  calculateWeeklyVolume,
+} from '../utils/workload';
 import { RouteVisualizer } from './RouteVisualizer';
 
 interface RunHistoryModalProps {
@@ -39,6 +44,10 @@ export const RunHistoryModal: React.FC<RunHistoryModalProps> = ({
   const insets = useSafeAreaInsets();
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const unitLabels = getUnitLabels(unitPreference);
+
+  const acwrReport = useMemo(() => calculateAcwr(runs), [runs]);
+  const racePredictions = useMemo(() => predictRaceTimes(runs), [runs]);
+  const weeklyVolume = useMemo(() => calculateWeeklyVolume(runs), [runs]);
 
   useEffect(() => {
     let isMounted = true;
@@ -200,6 +209,118 @@ export const RunHistoryModal: React.FC<RunHistoryModalProps> = ({
               data={runs}
               keyExtractor={(item) => item.id}
               className="py-4"
+              ListHeaderComponent={
+                runs.length > 0 ? (
+                  <View className="mb-2">
+                    {/* Training Load & ACWR Card */}
+                    <View className="p-4 mb-3 rounded-2xl bg-zinc-950 border border-zinc-900">
+                      <View className="flex-row items-center justify-between mb-2">
+                        <Text className="text-[11px] font-extrabold tracking-widest text-zinc-500 uppercase">
+                          TRAINING LOAD &amp; ACWR
+                        </Text>
+                        {acwrReport.acwrRatio !== null ? (
+                          <View
+                            className={`px-2 py-0.5 rounded border ${
+                              acwrReport.riskLevel === 'optimal'
+                                ? 'bg-emerald-950/60 border-emerald-500/40'
+                                : acwrReport.riskLevel === 'overreaching'
+                                ? 'bg-amber-950/60 border-amber-500/40'
+                                : acwrReport.riskLevel === 'danger'
+                                ? 'bg-rose-950/60 border-rose-500/40'
+                                : 'bg-zinc-900 border-zinc-800'
+                            }`}
+                          >
+                            <Text
+                              style={{ fontVariant: ['tabular-nums'] }}
+                              className={`text-[9px] font-black uppercase ${
+                                acwrReport.riskLevel === 'optimal'
+                                  ? 'text-emerald-400'
+                                  : acwrReport.riskLevel === 'overreaching'
+                                  ? 'text-amber-400'
+                                  : acwrReport.riskLevel === 'danger'
+                                  ? 'text-rose-400'
+                                  : 'text-zinc-400'
+                              }`}
+                            >
+                              ACWR {acwrReport.acwrRatio.toFixed(2)} • {acwrReport.riskLevel}
+                            </Text>
+                          </View>
+                        ) : (
+                          <View className="px-2 py-0.5 rounded bg-zinc-900 border border-zinc-800">
+                            <Text className="text-[9px] font-bold text-zinc-500 uppercase">
+                              BUILDING BASELINE
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+
+                      <View className="flex-row items-baseline justify-between mb-1.5">
+                        <Text className="text-xs text-zinc-400 font-medium">7-Day Volume:</Text>
+                        <View className="flex-row items-baseline gap-1.5">
+                          <Text
+                            style={{ fontVariant: ['tabular-nums'] }}
+                            className="text-base font-bold text-white"
+                          >
+                            {formatUnitDistance(weeklyVolume.currentWeekMeters, unitPreference)}{' '}
+                            {unitLabels.distanceUnit}
+                          </Text>
+                          {weeklyVolume.weekOverWeekChangePct !== null && (
+                            <Text
+                              style={{ fontVariant: ['tabular-nums'] }}
+                              className={`text-xs font-semibold ${
+                                weeklyVolume.weekOverWeekChangePct > 20
+                                  ? 'text-amber-400'
+                                  : 'text-emerald-400'
+                              }`}
+                            >
+                              ({weeklyVolume.weekOverWeekChangePct >= 0 ? '+' : ''}
+                              {weeklyVolume.weekOverWeekChangePct}%)
+                            </Text>
+                          )}
+                        </View>
+                      </View>
+
+                      <Text className="text-[11px] text-zinc-500 leading-relaxed mt-1">
+                        {acwrReport.guidance}
+                      </Text>
+                    </View>
+
+                    {/* Pete Riegel Predicted Race Times */}
+                    {racePredictions.length > 0 && (
+                      <View className="p-4 mb-3 rounded-2xl bg-zinc-950 border border-zinc-900">
+                        <Text className="text-[11px] font-extrabold tracking-widest text-zinc-500 uppercase mb-3">
+                          PROJECTED RACE TIMES (RIEGEL MODEL)
+                        </Text>
+                        <View className="flex-row justify-between">
+                          {racePredictions.map((pred) => (
+                            <View key={pred.distanceName} className="items-center">
+                              <Text className="text-[10px] font-bold text-zinc-500 uppercase">
+                                {pred.distanceName === 'Half Marathon'
+                                  ? 'HALF'
+                                  : pred.distanceName === 'Marathon'
+                                  ? 'FULL'
+                                  : pred.distanceName}
+                              </Text>
+                              <Text
+                                style={{ fontVariant: ['tabular-nums'] }}
+                                className="text-xs font-black text-white mt-0.5"
+                              >
+                                {formatDuration(pred.predictedSeconds)}
+                              </Text>
+                              <Text
+                                style={{ fontVariant: ['tabular-nums'] }}
+                                className="text-[9px] font-medium text-zinc-400 mt-0.5"
+                              >
+                                {formatUnitPace(pred.predictedPaceSecondsPerKm, unitPreference)}
+                              </Text>
+                            </View>
+                          ))}
+                        </View>
+                      </View>
+                    )}
+                  </View>
+                ) : null
+              }
               renderItem={({ item }) => (
                 <View className="p-4 mb-3 rounded-2xl bg-zinc-900 border border-zinc-800/80">
                   <View className="flex-row items-center justify-between mb-2">

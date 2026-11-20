@@ -1,8 +1,8 @@
 # TruePace — Progress Tracker
 
 **Last Updated**: November 20, 2026  
-**Current Phase**: Phase 4 — Route Intelligence & Ecosystem Integrations  
-**Phase Status**: **COMPLETE (Phase 4 verified & tested)**
+**Current Phase**: Phase 5 — Advanced Predictive Intelligence  
+**Phase Status**: **COMPLETE (Phase 5 verified & tested)**
 
 ---
 
@@ -14,7 +14,7 @@ Phase 1 [████████████████████] 100% (Com
 Phase 2 [████████████████████] 100% (Complete)
 Phase 3 [████████████████████] 100% (Complete)
 Phase 4 [████████████████████] 100% (Complete)
-Phase 5 [░░░░░░░░░░░░░░░░░░░░]   0% (Ready to Begin)
+Phase 5 [████████████████████] 100% (Complete)
 ```
 
 ---
@@ -53,3 +53,8 @@ Phase 5 [░░░░░░░░░░░░░░░░░░░░]   0% (Rea
 | **P4-T4** | Offline JSON run history backup generator | `COMPLETE` | Pass | Pass | Pass | Pass | Pass |
 | **P4-T5** | Post-run vector route visualizer (`RouteVisualizer.tsx`) | `COMPLETE` | Pass | Pass | Pass | Pass | Pass |
 | **P4-T6** | Sharing integration (Single workout GPX/TCX & Backup All) | `COMPLETE` | Pass | Pass | Pass | Pass | Pass |
+| **P5-T1** | Acute:Chronic Workload Ratio (ACWR) model (`workload.ts`) | `COMPLETE` | Pass | Pass | Pass | Pass | Pass |
+| **P5-T2** | Gabbett sweet spot and mileage surge danger detector | `COMPLETE` | Pass | Pass | Pass | Pass | Pass |
+| **P5-T3** | Pete Riegel race time predictor (5K, 10K, Half, Marathon) | `COMPLETE` | Pass | Pass | Pass | Pass | Pass |
+| **P5-T4** | Weekly moving volume progression tracker | `COMPLETE` | Pass | Pass | Pass | Pass | Pass |
+| **P5-T5** | Workload & race predictions UI in Run History Modal | `COMPLETE` | Pass | Pass | Pass | Pass | Pass |
