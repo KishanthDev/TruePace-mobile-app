@@ -17,13 +17,21 @@ export const MetricTile: React.FC<MetricTileProps> = ({
   accentColor,
 }) => {
   return (
-    <View className={`items-center justify-center ${isHero ? 'my-4' : 'my-2'}`}>
+    <View
+      accessible={true}
+      accessibilityRole="text"
+      accessibilityLabel={`${label}: ${value} ${unit || ''}`}
+      className={`items-center justify-center ${isHero ? 'my-4' : 'my-2'}`}
+    >
       <Text className="text-xs font-semibold tracking-widest text-zinc-500 uppercase mb-1">
         {label}
       </Text>
       <View className="flex-row items-baseline">
         <Text
-          style={accentColor ? { color: accentColor } : undefined}
+          style={[
+            { fontVariant: ['tabular-nums'] },
+            accentColor ? { color: accentColor } : undefined,
+          ]}
           className={`${
             isHero
               ? 'text-7xl font-extrabold tracking-tighter text-white'

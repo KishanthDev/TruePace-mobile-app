@@ -12,11 +12,12 @@ import { MetricTile } from '../components/MetricTile';
 import { ControlButton } from '../components/ControlButton';
 import { RunHistoryModal } from '../components/RunHistoryModal';
 import { GpsAlertModal } from '../components/GpsAlertModal';
+import { formatDuration } from '../utils/geo';
 import {
-  formatDistanceKm,
-  formatDuration,
-  formatPace,
-} from '../utils/geo';
+  formatUnitDistance,
+  formatUnitPace,
+  getUnitLabels,
+} from '../utils/units';
 
 export default function RunHudScreen() {
   const insets = useSafeAreaInsets();
@@ -26,6 +27,9 @@ export default function RunHudScreen() {
     lastFinishedRun,
     isAudioCuesEnabled,
     toggleAudioCues,
+    unitPreference,
+    toggleUnitPreference,
+    setTargetPace,
     requestPermission,
     startRun,
     pauseRun,
@@ -36,6 +40,21 @@ export default function RunHudScreen() {
 
   const [historyVisible, setHistoryVisible] = useState(false);
   const [gpsModalVisible, setGpsModalVisible] = useState(false);
+
+  const {
+    status,
+    elapsedSeconds,
+    distanceMeters,
+    currentPaceSecondsPerKm,
+    avgPaceSecondsPerKm,
+    isGpsReady,
+    gpsIssueReason,
+    gpsAccuracyMeters,
+    targetPaceSecondsPerKm,
+    targetDeltaSeconds,
+  } = telemetry;
+
+  const unitLabels = getUnitLabels(unitPreference);
 
   const handleFinishPrompt = () => {
     Alert.alert(
@@ -48,16 +67,20 @@ export default function RunHudScreen() {
     );
   };
 
-  const {
-    status,
-    elapsedSeconds,
-    distanceMeters,
-    currentPaceSecondsPerKm,
-    avgPaceSecondsPerKm,
-    isGpsReady,
-    gpsIssueReason,
-    gpsAccuracyMeters,
-  } = telemetry;
+  const promptTargetPace = () => {
+    Alert.alert(
+      'Target Running Pace',
+      'Select a target pace for real-time guidance and pace delta indicators:',
+      [
+        { text: 'Turn Off', onPress: () => setTargetPace(null) },
+        { text: '4:30 /km (7:14 /mi)', onPress: () => setTargetPace(270) },
+        { text: '5:00 /km (8:02 /mi)', onPress: () => setTargetPace(300) },
+        { text: '5:30 /km (8:51 /mi)', onPress: () => setTargetPace(330) },
+        { text: '6:00 /km (9:39 /mi)', onPress: () => setTargetPace(360) },
+        { text: 'Cancel', style: 'cancel' },
+      ]
+    );
+  };
 
   const getGpsStatus = () => {
     if (gpsAccuracyMeters === null) {
@@ -100,7 +123,41 @@ export default function RunHudScreen() {
             </Text>
           </TouchableOpacity>
 
-          <View className="flex-row items-center space-x-2 gap-2">
+          <View className="flex-row items-center space-x-1.5 gap-1.5">
+            {/* Unit Toggle (KM / MI) */}
+            <TouchableOpacity
+              onPress={toggleUnitPreference}
+              activeOpacity={0.7}
+              className="px-2.5 py-1 rounded-full bg-zinc-900 border border-zinc-800"
+            >
+              <Text className="text-[11px] font-black text-zinc-300">
+                {unitPreference === 'metric' ? 'KM' : 'MI'}
+              </Text>
+            </TouchableOpacity>
+
+            {/* Target Pace Toggle / Modal (Idle only) */}
+            {status === 'idle' && (
+              <TouchableOpacity
+                onPress={promptTargetPace}
+                activeOpacity={0.7}
+                className={`px-2.5 py-1 rounded-full border ${
+                  targetPaceSecondsPerKm
+                    ? 'bg-emerald-950/40 border-emerald-500/40'
+                    : 'bg-zinc-900 border-zinc-800'
+                }`}
+              >
+                <Text
+                  className={`text-[11px] font-bold ${
+                    targetPaceSecondsPerKm ? 'text-emerald-400' : 'text-zinc-500'
+                  }`}
+                >
+                  {targetPaceSecondsPerKm
+                    ? `TARGET ${formatUnitPace(targetPaceSecondsPerKm, unitPreference)}`
+                    : 'TARGET'}
+                </Text>
+              </TouchableOpacity>
+            )}
+
             <TouchableOpacity
               onPress={toggleAudioCues}
               activeOpacity={0.7}
@@ -115,13 +172,13 @@ export default function RunHudScreen() {
                   isAudioCuesEnabled ? 'text-emerald-400' : 'text-zinc-500'
                 }`}
               >
-                {isAudioCuesEnabled ? 'AUDIO ON' : 'AUDIO OFF'}
+                {isAudioCuesEnabled ? 'AUDIO' : 'MUTE'}
               </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               onPress={() => setHistoryVisible(true)}
-              className="px-3 py-1 rounded-full bg-zinc-900 border border-zinc-800"
+              className="px-2.5 py-1 rounded-full bg-zinc-900 border border-zinc-800"
             >
               <Text className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">
                 History
@@ -152,15 +209,20 @@ export default function RunHudScreen() {
             <Text className="text-xs font-extrabold tracking-widest text-emerald-400 uppercase mb-2">
               RUN COMPLETE
             </Text>
-            <Text className="text-6xl font-black text-white tracking-tighter">
-              {formatDistanceKm(lastFinishedRun.distanceMeters)}
+            <Text
+              style={{ fontVariant: ['tabular-nums'] }}
+              className="text-6xl font-black text-white tracking-tighter"
+            >
+              {formatUnitDistance(lastFinishedRun.distanceMeters, unitPreference)}
             </Text>
             <Text className="text-sm font-bold text-zinc-400 uppercase tracking-widest mb-4">
-              KILOMETERS
+              {unitLabels.distanceUnit === 'KM' ? 'KILOMETERS' : 'MILES'}
             </Text>
 
             {/* Intelligent Analytics Badges */}
-            {(lastFinishedRun.consistencyScore !== undefined || lastFinishedRun.isNegativeSplit || (lastFinishedRun.newRecords && lastFinishedRun.newRecords.length > 0)) && (
+            {(lastFinishedRun.consistencyScore !== undefined ||
+              lastFinishedRun.isNegativeSplit ||
+              (lastFinishedRun.newRecords && lastFinishedRun.newRecords.length > 0)) && (
               <View className="flex-row flex-wrap justify-center gap-2 mb-6 px-2">
                 {lastFinishedRun.consistencyScore !== undefined && (
                   <View className="px-3 py-1 rounded-full bg-zinc-900 border border-zinc-700/60">
@@ -191,7 +253,10 @@ export default function RunHudScreen() {
                 <Text className="text-xs font-semibold text-zinc-500 uppercase">
                   Time
                 </Text>
-                <Text className="text-2xl font-bold text-white mt-1">
+                <Text
+                  style={{ fontVariant: ['tabular-nums'] }}
+                  className="text-2xl font-bold text-white mt-1"
+                >
                   {formatDuration(lastFinishedRun.durationSeconds)}
                 </Text>
               </View>
@@ -200,8 +265,11 @@ export default function RunHudScreen() {
                 <Text className="text-xs font-semibold text-zinc-500 uppercase">
                   Avg Pace
                 </Text>
-                <Text className="text-2xl font-bold text-white mt-1">
-                  {formatPace(lastFinishedRun.avgPaceSecondsPerKm)}/km
+                <Text
+                  style={{ fontVariant: ['tabular-nums'] }}
+                  className="text-2xl font-bold text-white mt-1"
+                >
+                  {formatUnitPace(lastFinishedRun.avgPaceSecondsPerKm, unitPreference)}{unitLabels.paceUnit}
                 </Text>
               </View>
 
@@ -209,8 +277,11 @@ export default function RunHudScreen() {
                 <Text className="text-xs font-semibold text-zinc-500 uppercase">
                   Best Pace
                 </Text>
-                <Text className="text-2xl font-bold text-white mt-1">
-                  {formatPace(lastFinishedRun.bestPaceSecondsPerKm)}/km
+                <Text
+                  style={{ fontVariant: ['tabular-nums'] }}
+                  className="text-2xl font-bold text-white mt-1"
+                >
+                  {formatUnitPace(lastFinishedRun.bestPaceSecondsPerKm, unitPreference)}{unitLabels.paceUnit}
                 </Text>
               </View>
             </View>
@@ -219,7 +290,7 @@ export default function RunHudScreen() {
             {lastFinishedRun.splits && lastFinishedRun.splits.length > 0 && (
               <View className="w-full mt-4 p-4 rounded-3xl bg-zinc-950 border border-zinc-900">
                 <Text className="text-[11px] font-extrabold tracking-widest text-zinc-500 uppercase mb-3">
-                  Kilometer Splits
+                  Split Intervals
                 </Text>
                 {(() => {
                   const fastest = Math.min(...lastFinishedRun.splits);
@@ -243,11 +314,12 @@ export default function RunHudScreen() {
                           )}
                         </View>
                         <Text
+                          style={{ fontVariant: ['tabular-nums'] }}
                           className={`text-sm font-black ${
                             isFastest ? 'text-emerald-400' : 'text-white'
                           }`}
                         >
-                          {formatPace(splitTime)}/km
+                          {formatUnitPace(splitTime, unitPreference)}{unitLabels.paceUnit}
                         </Text>
                       </View>
                     );
@@ -259,23 +331,50 @@ export default function RunHudScreen() {
         ) : (
           /* Active Live In-Run HUD */
           <View className="flex-1 justify-center items-center py-4">
-            {/* Run Status Pill */}
-            <View className="mb-2 px-3 py-1 rounded-full bg-zinc-900/80 border border-zinc-800">
-              <Text
-                className={`text-[10px] font-black tracking-widest uppercase ${
-                  status === 'tracking'
-                    ? 'text-emerald-400'
+            {/* Run Status Pill & Target Delta */}
+            <View className="flex-row items-center gap-2 mb-2">
+              <View className="px-3 py-1 rounded-full bg-zinc-900/80 border border-zinc-800">
+                <Text
+                  className={`text-[10px] font-black tracking-widest uppercase ${
+                    status === 'tracking'
+                      ? 'text-emerald-400'
+                      : status === 'paused'
+                      ? 'text-amber-400'
+                      : 'text-zinc-500'
+                  }`}
+                >
+                  {status === 'tracking'
+                    ? 'TRACKING • BG ON'
                     : status === 'paused'
-                    ? 'text-amber-400'
-                    : 'text-zinc-500'
-                }`}
-              >
-                {status === 'tracking'
-                  ? 'TRACKING • BG ON'
-                  : status === 'paused'
-                  ? 'PAUSED'
-                  : 'READY'}
-              </Text>
+                    ? 'PAUSED'
+                    : 'READY'}
+                </Text>
+              </View>
+
+              {targetPaceSecondsPerKm && (
+                <View className="px-2.5 py-1 rounded-full bg-zinc-950 border border-zinc-800 flex-row items-center">
+                  <Text
+                    style={{ fontVariant: ['tabular-nums'] }}
+                    className={`text-[10px] font-black uppercase ${
+                      targetDeltaSeconds == null
+                        ? 'text-zinc-500'
+                        : targetDeltaSeconds < 0
+                        ? 'text-emerald-400'
+                        : targetDeltaSeconds > 0
+                        ? 'text-amber-400'
+                        : 'text-lime-400'
+                    }`}
+                  >
+                    {targetDeltaSeconds == null
+                      ? `TARGET ${formatUnitPace(targetPaceSecondsPerKm, unitPreference)}`
+                      : targetDeltaSeconds < 0
+                      ? `▲ ${Math.abs(targetDeltaSeconds)}S AHEAD`
+                      : targetDeltaSeconds > 0
+                      ? `▼ ${targetDeltaSeconds}S BEHIND`
+                      : 'ON TARGET'}
+                  </Text>
+                </View>
+              )}
             </View>
 
             {/* Elapsed Time */}
@@ -288,8 +387,8 @@ export default function RunHudScreen() {
             {/* Hero Distance */}
             <MetricTile
               label="Distance"
-              value={formatDistanceKm(distanceMeters)}
-              unit="KM"
+              value={formatUnitDistance(distanceMeters, unitPreference)}
+              unit={unitLabels.distanceUnit}
               isHero
               accentColor="#22c55e"
             />
@@ -300,11 +399,14 @@ export default function RunHudScreen() {
                 <Text className="text-xs font-semibold tracking-widest text-zinc-500 uppercase mb-1">
                   Current Pace
                 </Text>
-                <Text className="text-3xl font-black text-white">
-                  {formatPace(currentPaceSecondsPerKm)}
+                <Text
+                  style={{ fontVariant: ['tabular-nums'] }}
+                  className="text-3xl font-black text-white"
+                >
+                  {formatUnitPace(currentPaceSecondsPerKm, unitPreference)}
                 </Text>
                 <Text className="text-[10px] font-bold text-zinc-600 uppercase mt-0.5">
-                  /KM
+                  {unitLabels.paceUnit}
                 </Text>
               </View>
 
@@ -314,11 +416,14 @@ export default function RunHudScreen() {
                 <Text className="text-xs font-semibold tracking-widest text-zinc-500 uppercase mb-1">
                   Avg Pace
                 </Text>
-                <Text className="text-3xl font-black text-white">
-                  {formatPace(avgPaceSecondsPerKm)}
+                <Text
+                  style={{ fontVariant: ['tabular-nums'] }}
+                  className="text-3xl font-black text-white"
+                >
+                  {formatUnitPace(avgPaceSecondsPerKm, unitPreference)}
                 </Text>
                 <Text className="text-[10px] font-bold text-zinc-600 uppercase mt-0.5">
-                  /KM
+                  {unitLabels.paceUnit}
                 </Text>
               </View>
             </View>
@@ -402,6 +507,7 @@ export default function RunHudScreen() {
       <RunHistoryModal
         visible={historyVisible}
         onClose={() => setHistoryVisible(false)}
+        unitPreference={unitPreference}
       />
 
       {/* GPS Status & Alert Modal */}

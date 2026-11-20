@@ -56,6 +56,7 @@ export interface RunSummary {
   consistencyLabel?: string; // 'Metronomic' | 'Consistent' | 'Varied' | 'Erratic'
   isNegativeSplit?: boolean; // Second half faster than first half
   newRecords?: string[]; // Personal record badges earned in this run
+  targetPaceSecondsPerKm?: number | null;
 }
 
 export interface TrackingTelemetry {
@@ -71,4 +72,6 @@ export interface TrackingTelemetry {
   gpsIssueReason: GpsIssueReason;
   totalValidPoints: number;
   lastRejectionReason?: GpsPointRejectionReason;
+  targetPaceSecondsPerKm?: number | null;
+  targetDeltaSeconds?: number | null; // Negative = faster than target (ahead), positive = slower (behind)
 }

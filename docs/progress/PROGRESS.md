@@ -1,8 +1,8 @@
 # TruePace — Progress Tracker
 
 **Last Updated**: November 20, 2026  
-**Current Phase**: Phase 1 — Data, Analytics & Quality Foundation  
-**Phase Status**: **COMPLETE (Phase 1 verified & tested)**
+**Current Phase**: Phase 2 — Intelligent Running Experience  
+**Phase Status**: **COMPLETE (Phase 2 verified & tested)**
 
 ---
 
@@ -11,8 +11,8 @@
 ```
 Phase 0 [████████████████████] 100% (Complete)
 Phase 1 [████████████████████] 100% (Complete)
-Phase 2 [░░░░░░░░░░░░░░░░░░░░]   0% (Ready to Begin)
-Phase 3 [░░░░░░░░░░░░░░░░░░░░]   0% (Planned)
+Phase 2 [████████████████████] 100% (Complete)
+Phase 3 [░░░░░░░░░░░░░░░░░░░░]   0% (Ready to Begin)
 Phase 4 [░░░░░░░░░░░░░░░░░░░░]   0% (Planned)
 Phase 5 [░░░░░░░░░░░░░░░░░░░░]   0% (Planned)
 ```
@@ -37,3 +37,8 @@ Phase 5 [░░░░░░░░░░░░░░░░░░░░]   0% (Pla
 | **P1-T5** | Pace Consistency Index & Negative Split math | `COMPLETE` | Pass | Pass | Pass | Pass | Pass |
 | **P1-T6** | Personal Records detection & persistence | `COMPLETE` | Pass | Pass | Pass | Pass | Pass |
 | **P1-T7** | Confirmation dialogs (Finish run, Clear history) | `COMPLETE` | Pass | Pass | Pass | Pass | Pass |
+| **P2-T1** | Unit conversion engine (Metric KM ↔ Imperial Miles) | `COMPLETE` | Pass | Pass | Pass | Pass | Pass |
+| **P2-T2** | Unit conversion test suite (100% test coverage) | `COMPLETE` | Pass | Pass | Pass | Pass | Pass |
+| **P2-T3** | Target Pace setting & real-time delta telemetry | `COMPLETE` | Pass | Pass | Pass | Pass | Pass |
+| **P2-T4** | Tabular figures (`tabular-nums`) anti-jitter typography | `COMPLETE` | Pass | Pass | Pass | Pass | Pass |
+| **P2-T5** | Header controls (Unit toggle, Target pace picker) | `COMPLETE` | Pass | Pass | Pass | Pass | Pass |

@@ -98,6 +98,7 @@ export class TrackingEngine {
   public splitStartActiveSeconds = 0; // Active elapsed seconds at the start of the current split
   public splits: number[] = []; // Per-km split times in seconds
 
+  public targetPaceSecondsPerKm: number | null = null;
   public lastRejectionReason: GpsPointRejectionReason = null;
   public lastDiagnosticLog: GpsDiagnosticLog | null = null;
   public lastFinishedRun: RunSummary | null = null;
@@ -135,6 +136,11 @@ export class TrackingEngine {
 
   public setHasPermission(granted: boolean): void {
     this.hasPermission = granted;
+    this.notifyListeners();
+  }
+
+  public setTargetPace(secondsPerKm: number | null): void {
+    this.targetPaceSecondsPerKm = secondsPerKm;
     this.notifyListeners();
   }
 
@@ -225,6 +231,11 @@ export class TrackingEngine {
       this.gpsAccuracy !== null &&
       this.gpsAccuracy <= GPS_ACCURACY_THRESHOLD_METERS;
 
+    let targetDeltaSeconds: number | null = null;
+    if (this.targetPaceSecondsPerKm !== null && this.currentPaceSecondsPerKm !== null) {
+      targetDeltaSeconds = Math.round(this.currentPaceSecondsPerKm - this.targetPaceSecondsPerKm);
+    }
+
     return {
       status: this.status,
       elapsedSeconds: elapsed,
@@ -238,6 +249,8 @@ export class TrackingEngine {
       gpsIssueReason,
       totalValidPoints: this.totalValidPoints,
       lastRejectionReason: this.lastRejectionReason,
+      targetPaceSecondsPerKm: this.targetPaceSecondsPerKm,
+      targetDeltaSeconds,
     };
   }
 
@@ -741,6 +754,7 @@ export class TrackingEngine {
       bestPaceSecondsPerKm: speedToPace(this.maxSpeedMps),
       maxSpeedMps: this.maxSpeedMps,
       splits: [...this.splits],
+      targetPaceSecondsPerKm: this.targetPaceSecondsPerKm,
     };
 
     this.status = 'finished';

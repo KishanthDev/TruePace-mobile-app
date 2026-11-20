@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback, useSyncExternalStore } from 'react';
 import * as Location from 'expo-location';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   GpsIssueReason,
   RunSummary,
 } from '../types/tracking';
+import { UnitSystem } from '../utils/units';
 import { TrackingEngine } from '../services/TrackingEngine';
 import { AudioCoach } from '../services/AudioCoach';
 import { LiveNotificationService } from '../services/LiveNotificationService';
@@ -12,6 +14,7 @@ import { LiveNotificationService } from '../services/LiveNotificationService';
 const engine = TrackingEngine.getInstance();
 const audioCoach = AudioCoach.getInstance();
 const liveNotificationService = LiveNotificationService.getInstance();
+const UNIT_PREFERENCE_KEY = '@truepace_unit_preference_v1';
 
 export function useRunTracker() {
   const telemetry = useSyncExternalStore(engine.subscribe, engine.getTelemetry);
@@ -19,6 +22,18 @@ export function useRunTracker() {
   const [hasPermission, setHasPermission] = useState<boolean | null>(() => engine.hasPermission);
   const [hasBackgroundPermission, setHasBackgroundPermission] = useState<boolean | null>(null);
   const [lastFinishedRun, setLastFinishedRun] = useState<RunSummary | null>(() => engine.lastFinishedRun);
+  const [unitPreference, setUnitPreference] = useState<UnitSystem>('metric');
+
+  // Load persisted unit preference
+  useEffect(() => {
+    AsyncStorage.getItem(UNIT_PREFERENCE_KEY)
+      .then((val) => {
+        if (val === 'imperial' || val === 'metric') {
+          setUnitPreference(val);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // Wall-clock ticker when tracking in foreground
   useEffect(() => {
@@ -168,6 +183,18 @@ export function useRunTracker() {
     audioCoach.setEnabled(!audioCoach.getIsEnabled());
   }, []);
 
+  const toggleUnitPreference = useCallback(() => {
+    setUnitPreference((prev) => {
+      const next: UnitSystem = prev === 'metric' ? 'imperial' : 'metric';
+      AsyncStorage.setItem(UNIT_PREFERENCE_KEY, next).catch(() => {});
+      return next;
+    });
+  }, []);
+
+  const setTargetPace = useCallback((secondsPerKm: number | null) => {
+    engine.setTargetPace(secondsPerKm);
+  }, []);
+
   return {
     telemetry,
     hasPermission,
@@ -175,6 +202,9 @@ export function useRunTracker() {
     lastFinishedRun,
     isAudioCuesEnabled,
     toggleAudioCues,
+    unitPreference,
+    toggleUnitPreference,
+    setTargetPace,
     checkLocationServices,
     requestPermission,
     startRun,

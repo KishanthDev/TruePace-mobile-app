@@ -10,19 +10,28 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RunSummary } from '../types/tracking';
 import { getRunHistory, clearRunHistory, deleteRun } from '../utils/storage';
-import { formatDistanceKm, formatDuration, formatPace } from '../utils/geo';
+import { formatDuration } from '../utils/geo';
+import {
+  UnitSystem,
+  formatUnitDistance,
+  formatUnitPace,
+  getUnitLabels,
+} from '../utils/units';
 
 interface RunHistoryModalProps {
   visible: boolean;
   onClose: () => void;
+  unitPreference?: UnitSystem;
 }
 
 export const RunHistoryModal: React.FC<RunHistoryModalProps> = ({
   visible,
   onClose,
+  unitPreference = 'metric',
 }) => {
   const insets = useSafeAreaInsets();
   const [runs, setRuns] = useState<RunSummary[]>([]);
+  const unitLabels = getUnitLabels(unitPreference);
 
   useEffect(() => {
     let isMounted = true;
@@ -41,7 +50,7 @@ export const RunHistoryModal: React.FC<RunHistoryModalProps> = ({
   const handleDeleteRun = (run: RunSummary) => {
     Alert.alert(
       'Delete Workout?',
-      `Are you sure you want to delete the ${formatDistanceKm(run.distanceMeters)} KM run from ${formatDate(run.startTime)}?`,
+      `Are you sure you want to delete the ${formatUnitDistance(run.distanceMeters, unitPreference)} ${unitLabels.distanceUnit} run from ${formatDate(run.startTime)}?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -129,8 +138,11 @@ export const RunHistoryModal: React.FC<RunHistoryModalProps> = ({
                       {formatDate(item.startTime)}
                     </Text>
                     <View className="flex-row items-center gap-2">
-                      <Text className="text-xs font-bold text-emerald-400">
-                        {formatDistanceKm(item.distanceMeters)} KM
+                      <Text
+                        style={{ fontVariant: ['tabular-nums'] }}
+                        className="text-xs font-bold text-emerald-400"
+                      >
+                        {formatUnitDistance(item.distanceMeters, unitPreference)} {unitLabels.distanceUnit}
                       </Text>
                       <TouchableOpacity
                         onPress={() => handleDeleteRun(item)}
@@ -174,7 +186,10 @@ export const RunHistoryModal: React.FC<RunHistoryModalProps> = ({
                       <Text className="text-[10px] tracking-wider text-zinc-500 uppercase">
                         Duration
                       </Text>
-                      <Text className="text-base font-bold text-white">
+                      <Text
+                        style={{ fontVariant: ['tabular-nums'] }}
+                        className="text-base font-bold text-white"
+                      >
                         {formatDuration(item.durationSeconds)}
                       </Text>
                     </View>
@@ -183,8 +198,11 @@ export const RunHistoryModal: React.FC<RunHistoryModalProps> = ({
                       <Text className="text-[10px] tracking-wider text-zinc-500 uppercase">
                         Avg Pace
                       </Text>
-                      <Text className="text-base font-bold text-white">
-                        {formatPace(item.avgPaceSecondsPerKm)}/km
+                      <Text
+                        style={{ fontVariant: ['tabular-nums'] }}
+                        className="text-base font-bold text-white"
+                      >
+                        {formatUnitPace(item.avgPaceSecondsPerKm, unitPreference)}{unitLabels.paceUnit}
                       </Text>
                     </View>
 
@@ -192,13 +210,16 @@ export const RunHistoryModal: React.FC<RunHistoryModalProps> = ({
                       <Text className="text-[10px] tracking-wider text-zinc-500 uppercase">
                         Best Pace
                       </Text>
-                      <Text className="text-base font-bold text-white">
-                        {formatPace(item.bestPaceSecondsPerKm)}/km
+                      <Text
+                        style={{ fontVariant: ['tabular-nums'] }}
+                        className="text-base font-bold text-white"
+                      >
+                        {formatUnitPace(item.bestPaceSecondsPerKm, unitPreference)}{unitLabels.paceUnit}
                       </Text>
                     </View>
                   </View>
 
-                  {/* Kilometer Splits */}
+                  {/* Splits Breakdown */}
                   {item.splits && item.splits.length > 0 && (
                     <View className="mt-3 pt-3 border-t border-zinc-800/50">
                       <Text className="text-[10px] font-bold tracking-wider text-zinc-500 uppercase mb-2">
@@ -219,11 +240,12 @@ export const RunHistoryModal: React.FC<RunHistoryModalProps> = ({
                                 }`}
                               >
                                 <Text
+                                  style={{ fontVariant: ['tabular-nums'] }}
                                   className={`text-[11px] font-bold ${
                                     isFast ? 'text-emerald-400' : 'text-zinc-300'
                                   }`}
                                 >
-                                  KM {sIdx + 1}: {formatPace(split)}
+                                  KM {sIdx + 1}: {formatUnitPace(split, unitPreference)}
                                   {isFast ? ' ★' : ''}
                                 </Text>
                               </View>
