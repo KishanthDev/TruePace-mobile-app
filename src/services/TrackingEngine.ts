@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import * as Haptics from 'expo-haptics';
 import {
+  BreadcrumbPoint,
   GpsCoordinate,
   GpsDiagnosticLog,
   GpsIssueReason,
@@ -22,6 +23,10 @@ import {
   MAX_REASONABLE_RUNNING_SPEED_MPS,
   MAX_GPS_GAP_SECONDS,
 } from '../utils/geo';
+import {
+  simplifyPolyline,
+  calculateElevationProfile,
+} from '../utils/polyline';
 import { saveRunSummary } from '../utils/storage';
 import { AudioCoach } from './AudioCoach';
 import { LiveNotificationService } from './LiveNotificationService';
@@ -102,6 +107,7 @@ export class TrackingEngine {
   public lastRejectionReason: GpsPointRejectionReason = null;
   public lastDiagnosticLog: GpsDiagnosticLog | null = null;
   public lastFinishedRun: RunSummary | null = null;
+  public recordedBreadcrumbs: BreadcrumbPoint[] = [];
 
   // ── Native Subscriptions ────────────────────────────────────────────────────
   private foregroundSubscription: Location.LocationSubscription | null = null;
@@ -512,6 +518,13 @@ export class TrackingEngine {
     this.lastAcceptedTimestamp = coord.timestamp;
     this.totalValidPoints++;
 
+    this.recordedBreadcrumbs.push({
+      latitude: coord.latitude,
+      longitude: coord.longitude,
+      altitude: coord.altitude,
+      timestamp: coord.timestamp,
+    });
+
     recordDiagnostic(true, null, deltaMeters, elapsedFromAnchorSeconds, impliedSpeed);
 
     const currentKm = Math.floor(this.accumulatedDistance / 1000);
@@ -635,6 +648,7 @@ export class TrackingEngine {
     this.lastKilometerMilestone = 0;
     this.splitStartActiveSeconds = 0;
     this.splits = [];
+    this.recordedBreadcrumbs = [];
     this.maxSpeedMps = 0;
     this.lastGpsReading = null;
     this.lastAcceptedCoord = null;
@@ -744,6 +758,9 @@ export class TrackingEngine {
     // Restart foreground watch so user sees satellite status for the next run
     await this.startForegroundWatch();
 
+    const simplified = simplifyPolyline(this.recordedBreadcrumbs, 5.0);
+    const { gainMeters } = calculateElevationProfile(this.recordedBreadcrumbs);
+
     const summary: RunSummary = {
       id: `${this.startTime}_${Math.random().toString(36).substring(2, 7)}`,
       startTime: this.startTime,
@@ -755,6 +772,8 @@ export class TrackingEngine {
       maxSpeedMps: this.maxSpeedMps,
       splits: [...this.splits],
       targetPaceSecondsPerKm: this.targetPaceSecondsPerKm,
+      breadcrumbs: simplified.length > 0 ? simplified : undefined,
+      elevationGainMeters: gainMeters > 0 ? gainMeters : null,
     };
 
     this.status = 'finished';
@@ -800,6 +819,7 @@ export class TrackingEngine {
     this.lastKilometerMilestone = 0;
     this.splitStartActiveSeconds = 0;
     this.splits = [];
+    this.recordedBreadcrumbs = [];
 
     this.clearActiveSessionSnapshot();
     LiveNotificationService.getInstance().dismissLiveNotification().catch(() => {});

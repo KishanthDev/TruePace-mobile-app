@@ -42,6 +42,13 @@ export interface GpsDiagnosticLog {
   accumulatedDistance: number;
 }
 
+export interface BreadcrumbPoint {
+  latitude: number;
+  longitude: number;
+  altitude?: number | null;
+  timestamp: number;
+}
+
 export interface RunSummary {
   id: string;
   startTime: number;
@@ -57,6 +64,8 @@ export interface RunSummary {
   isNegativeSplit?: boolean; // Second half faster than first half
   newRecords?: string[]; // Personal record badges earned in this run
   targetPaceSecondsPerKm?: number | null;
+  breadcrumbs?: BreadcrumbPoint[]; // Downsampled GPS route points
+  elevationGainMeters?: number | null; // Cumulative elevation gain
 }
 
 export interface TrackingTelemetry {

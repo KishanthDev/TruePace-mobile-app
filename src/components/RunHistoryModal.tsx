@@ -6,6 +6,7 @@ import {
   FlatList,
   TouchableOpacity,
   Alert,
+  Share,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RunSummary } from '../types/tracking';
@@ -17,6 +18,12 @@ import {
   formatUnitPace,
   getUnitLabels,
 } from '../utils/units';
+import {
+  generateGpx,
+  generateTcx,
+  generateHistoryBackupJson,
+} from '../utils/gpxSerializer';
+import { RouteVisualizer } from './RouteVisualizer';
 
 interface RunHistoryModalProps {
   visible: boolean;
@@ -67,6 +74,58 @@ export const RunHistoryModal: React.FC<RunHistoryModalProps> = ({
     );
   };
 
+  const handleExportRun = (run: RunSummary) => {
+    Alert.alert(
+      'Export Workout Data',
+      'Select export format compatible with Strava, Garmin, Apple Health, or Google Fit:',
+      [
+        {
+          text: 'GPX 1.1 (Standard)',
+          onPress: async () => {
+            try {
+              await Share.share({
+                title: `TruePace_${run.id}.gpx`,
+                message: generateGpx(run),
+              });
+            } catch (err: unknown) {
+              const message = err instanceof Error ? err.message : 'Export failed';
+              Alert.alert('Export Failed', message);
+            }
+          },
+        },
+        {
+          text: 'TCX (Garmin Training Center)',
+          onPress: async () => {
+            try {
+              await Share.share({
+                title: `TruePace_${run.id}.tcx`,
+                message: generateTcx(run),
+              });
+            } catch (err: unknown) {
+              const message = err instanceof Error ? err.message : 'Export failed';
+              Alert.alert('Export Failed', message);
+            }
+          },
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ]
+    );
+  };
+
+  const handleExportAllBackup = async () => {
+    if (runs.length === 0) return;
+    try {
+      const backupJson = generateHistoryBackupJson(runs);
+      await Share.share({
+        title: `TruePace_Backup_${new Date().toISOString().slice(0, 10)}.json`,
+        message: backupJson,
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Backup export failed';
+      Alert.alert('Backup Failed', message);
+    }
+  };
+
   const handleClear = () => {
     Alert.alert(
       'Clear All History?',
@@ -110,12 +169,22 @@ export const RunHistoryModal: React.FC<RunHistoryModalProps> = ({
             <Text className="text-xl font-bold tracking-wider text-white uppercase">
               Run History
             </Text>
-            <TouchableOpacity
-              onPress={onClose}
-              className="px-3 py-1.5 rounded-full bg-zinc-800"
-            >
-              <Text className="text-sm font-semibold text-zinc-300">Close</Text>
-            </TouchableOpacity>
+            <View className="flex-row items-center gap-2">
+              {runs.length > 0 && (
+                <TouchableOpacity
+                  onPress={handleExportAllBackup}
+                  className="px-3 py-1.5 rounded-full bg-zinc-900 border border-zinc-800"
+                >
+                  <Text className="text-xs font-semibold text-emerald-400">Backup All</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                onPress={onClose}
+                className="px-3 py-1.5 rounded-full bg-zinc-800"
+              >
+                <Text className="text-sm font-semibold text-zinc-300">Close</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* List */}
@@ -144,6 +213,13 @@ export const RunHistoryModal: React.FC<RunHistoryModalProps> = ({
                       >
                         {formatUnitDistance(item.distanceMeters, unitPreference)} {unitLabels.distanceUnit}
                       </Text>
+                      <TouchableOpacity
+                        onPress={() => handleExportRun(item)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        className="px-2 py-0.5 rounded bg-zinc-800/80"
+                      >
+                        <Text className="text-[10px] font-semibold text-emerald-400">Export</Text>
+                      </TouchableOpacity>
                       <TouchableOpacity
                         onPress={() => handleDeleteRun(item)}
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -254,6 +330,11 @@ export const RunHistoryModal: React.FC<RunHistoryModalProps> = ({
                         })()}
                       </View>
                     </View>
+                  )}
+
+                  {/* Route Polyline Preview */}
+                  {item.breadcrumbs && item.breadcrumbs.length >= 2 && (
+                    <RouteVisualizer run={item} height={120} />
                   )}
                 </View>
               )}

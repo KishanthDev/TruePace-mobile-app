@@ -19,6 +19,7 @@ import {
   getUnitLabels,
 } from '../utils/units';
 import { AiCoachingService } from '../services/AiCoachingService';
+import { RouteVisualizer } from '../components/RouteVisualizer';
 
 export default function RunHudScreen() {
   const insets = useSafeAreaInsets();
@@ -333,6 +334,9 @@ export default function RunHudScreen() {
                 })()}
               </View>
             )}
+
+            {/* Post-Run Route Polyline & Elevation Profile */}
+            <RouteVisualizer run={lastFinishedRun} height={160} />
 
             {/* AI Coach Post-Workout Insights */}
             {coachingReport && (

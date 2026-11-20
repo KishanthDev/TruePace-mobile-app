@@ -1,5 +1,29 @@
 # TruePace — Engineering Changelog
 
+## [Phase 4 Complete] — 2026-11-20
+
+### Added
+- **Polyline Simplification & Elevation Engine (`src/utils/polyline.ts`)**:
+  - Pure TypeScript implementation of the Ramer-Douglas-Peucker algorithm for reducing GPS coordinate points with sub-meter accuracy.
+  - Altitude noise filter with hysteresis thresholding ($\ge 3\text{m}$) for reliable cumulative elevation gain/loss.
+  - 2D Viewport projection engine preserving true geographic aspect ratio for lightweight vector route rendering.
+  - 7 unit tests in `tests/polyline.test.ts` (all 50 project tests passing).
+- **Data Export & Portability Suite (`src/utils/gpxSerializer.ts`)**:
+  - Schema-valid GPX 1.1 XML generation with trackpoints, ISO timestamps, and elevation.
+  - Garmin Training Center XML (TCX) generator with laps and trackpoints.
+  - Offline JSON workout history backup generator.
+  - 4 unit tests in `tests/gpx.test.ts`.
+- **Route Visualizer Component (`src/components/RouteVisualizer.tsx`)**:
+  - Ultra-lightweight vector route polyline preview on completed run summary and history cards.
+  - Green start marker, amber finish marker, and elevation gain badge.
+  - Native GPX export button invoking the system share sheet (`Share.share`).
+- **History Modal Enhancements (`src/components/RunHistoryModal.tsx`)**:
+  - One-tap "Backup All" in the header to export complete JSON history.
+  - Individual "Export" action per workout offering GPX 1.1 and TCX formats.
+  - Inline route polyline preview for all runs containing GPS coordinates.
+
+---
+
 ## [Phase 3 Complete] — 2026-11-20
 
 ### Added
