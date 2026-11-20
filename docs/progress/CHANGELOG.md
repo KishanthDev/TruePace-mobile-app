@@ -1,5 +1,23 @@
 # TruePace — Engineering Changelog
 
+## [Phase 3 Complete] — 2026-11-20
+
+### Added
+- **AI Coaching & Recovery Insights Engine (`src/services/AiCoachingService.ts`)**:
+  - Deterministic 100% offline local coaching heuristics:
+    - Performance categorization (`recovery`, `base_building`, `tempo`, `threshold`, `interval`).
+    - Pacing evaluation & consistency scoring (Grades A-D, negative/positive/even/erratic pacing).
+    - Real-time fatigue onset detection: Identifies split index where runner experienced pacing degradation (> 8% fade).
+    - Science-based recovery window calculation (12h to 72h based on distance, duration, intensity).
+    - Post-run nutrition, hydration, and next workout recommendation engine.
+  - Zero-GPS-leak anonymized cloud LLM prompt builder for optional cloud coaching.
+  - Unit test suite in `tests/coaching.test.ts` covering negative splits, fatigue onset, and recovery hours.
+- **UI Integration in HUD**:
+  - OLED-styled "AI COACH INSIGHTS" card rendered on completed run summary.
+  - Displays performance grade, pacing strategy, fatigue onset alert, recommended recovery hours, next suggested session, and hydration tip.
+
+---
+
 ## [Phase 2 Complete] — 2026-11-20
 
 ### Added

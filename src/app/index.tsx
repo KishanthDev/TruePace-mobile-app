@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -18,6 +18,7 @@ import {
   formatUnitPace,
   getUnitLabels,
 } from '../utils/units';
+import { AiCoachingService } from '../services/AiCoachingService';
 
 export default function RunHudScreen() {
   const insets = useSafeAreaInsets();
@@ -55,6 +56,11 @@ export default function RunHudScreen() {
   } = telemetry;
 
   const unitLabels = getUnitLabels(unitPreference);
+
+  const coachingReport = useMemo(() => {
+    if (!lastFinishedRun) return null;
+    return AiCoachingService.getInstance().generateLocalCoachingReport(lastFinishedRun);
+  }, [lastFinishedRun]);
 
   const handleFinishPrompt = () => {
     Alert.alert(
@@ -325,6 +331,64 @@ export default function RunHudScreen() {
                     );
                   });
                 })()}
+              </View>
+            )}
+
+            {/* AI Coach Post-Workout Insights */}
+            {coachingReport && (
+              <View className="w-full mt-4 p-5 rounded-3xl bg-zinc-950 border border-zinc-900">
+                <View className="flex-row items-center justify-between mb-3">
+                  <View className="flex-row items-center">
+                    <Text className="text-[11px] font-extrabold tracking-widest text-emerald-400 uppercase">
+                      AI COACH INSIGHTS
+                    </Text>
+                  </View>
+                  <View className="px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30">
+                    <Text className="text-[9px] font-black text-emerald-400 uppercase">
+                      GRADE {coachingReport.pacingEvaluation.consistencyGrade} • {coachingReport.performanceCategory.replace('_', ' ')}
+                    </Text>
+                  </View>
+                </View>
+
+                <Text className="text-base font-bold text-white mb-2">
+                  {coachingReport.summaryTitle}
+                </Text>
+
+                <Text className="text-xs text-zinc-400 leading-relaxed mb-4">
+                  {coachingReport.pacingEvaluation.observation}
+                </Text>
+
+                {coachingReport.pacingEvaluation.fatigueOnsetKilometer && (
+                  <View className="mb-4 px-3 py-2 rounded-2xl bg-amber-950/40 border border-amber-500/30">
+                    <Text className="text-xs font-semibold text-amber-300">
+                      ⚠️ Pace fade noted starting at KM {coachingReport.pacingEvaluation.fatigueOnsetKilometer}
+                    </Text>
+                  </View>
+                )}
+
+                <View className="pt-3 border-t border-zinc-900">
+                  <View className="flex-row items-center justify-between mb-1.5">
+                    <Text className="text-xs font-medium text-zinc-500">
+                      Recommended Recovery:
+                    </Text>
+                    <Text className="text-xs font-bold text-white">
+                      {coachingReport.recoveryAdvice.recommendedRestHours} hours
+                    </Text>
+                  </View>
+
+                  <View className="flex-row items-center justify-between mb-1.5">
+                    <Text className="text-xs font-medium text-zinc-500">
+                      Suggested Next Session:
+                    </Text>
+                    <Text className="text-xs font-bold text-zinc-300">
+                      {coachingReport.recoveryAdvice.recommendedNextWorkout}
+                    </Text>
+                  </View>
+
+                  <Text className="text-[11px] text-zinc-500 italic mt-2">
+                    💡 {coachingReport.recoveryAdvice.hydrationNutritionTip}
+                  </Text>
+                </View>
               </View>
             )}
           </ScrollView>
