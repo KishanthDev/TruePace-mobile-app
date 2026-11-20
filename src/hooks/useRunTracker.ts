@@ -149,8 +149,8 @@ export function useRunTracker() {
     engine.pauseRun();
   }, []);
 
-  const resumeRun = useCallback(() => {
-    engine.resumeRun();
+  const resumeRun = useCallback(async () => {
+    await engine.resumeRun();
   }, []);
 
   const finishRun = useCallback(async (): Promise<RunSummary | null> => {

@@ -684,7 +684,7 @@ export class TrackingEngine {
     ).catch(() => {});
   }
 
-  public resumeRun(): void {
+  public async resumeRun(): Promise<void> {
     if (this.status !== 'paused') return;
     if (this.pauseStartTime !== null) {
       this.totalPausedMs += Date.now() - this.pauseStartTime;
@@ -696,6 +696,10 @@ export class TrackingEngine {
     this.lastAcceptedCoord = null;
     this.lastAcceptedTimestamp = null;
     this.recentPoints = [];
+
+    // Ensure GPS streams are active (safeguards cold-restored paused sessions)
+    await this.startBackgroundTracking();
+    await this.startForegroundWatch();
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     AudioCoach.getInstance().announceRunResumed();
@@ -749,7 +753,9 @@ export class TrackingEngine {
     this.notifyListeners();
 
     if (finalDistance >= 20) {
-      await saveRunSummary(summary);
+      const enriched = await saveRunSummary(summary);
+      this.lastFinishedRun = enriched;
+      this.notifyListeners();
     }
 
     return summary;
@@ -766,6 +772,7 @@ export class TrackingEngine {
     this.accumulatedDistance = 0;
     this.lastAcceptedCoord = null;
     this.lastAcceptedTimestamp = null;
+    this.lastProcessedTimestamp = null; // Clean dedup state between workouts
     this.currentPaceSecondsPerKm = null;
     this.currentSpeedMps = 0;
     this.totalValidPoints = 0;
@@ -837,6 +844,9 @@ export class TrackingEngine {
 
         if (this.status === 'tracking') {
           await this.startBackgroundTracking();
+          await this.startForegroundWatch();
+        } else if (this.status === 'paused') {
+          // Restart foreground watch so satellite lock is visible while paused
           await this.startForegroundWatch();
         }
         this.notifyListeners();

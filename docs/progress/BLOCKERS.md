@@ -1,20 +1,22 @@
 # TruePace — Active Blockers & Identified Defects
 
-## 1. Active Defects (To Be Resolved in Phase 1)
+## 1. Resolved Defects
 
-### DEF-01: Restored Paused Session Loses GPS Stream (High Severity)
-- **Status**: Identified during Phase 0 deep audit.
-- **Location**: [`src/services/TrackingEngine.ts:838`](file:///c:/KISHAN/SOURCECODE/AI/Run/src/services/TrackingEngine.ts#L838)
-- **Description**: `restoreActiveSession()` only restarts foreground watch and background location updates if `data.status === 'tracking'`. If the app was closed while paused, the session restores, but GPS streams are not re-initialized. When the user taps RESUME, `resumeRun()` assumes GPS streams are running, resulting in frozen distance and zero GPS updates.
-- **Resolution Plan**: Scheduled as Task **P1-T1**. Ensure `resumeRun()` and `restoreActiveSession()` safely re-initialize GPS subscriptions when resuming a restored session.
+### DEF-01: Restored Paused Session Loses GPS Stream (RESOLVED)
+- **Status**: **RESOLVED** (Phase 1, Commit pending)
+- **Fix**:
+  - `resumeRun()` explicitly calls `await this.startBackgroundTracking()` and `await this.startForegroundWatch()` to guarantee active location subscriptions upon unpausing.
+  - `restoreActiveSession()` starts foreground watch when restored in `paused` state so satellite lock remains visible.
+  - `resetRun()` cleans `lastProcessedTimestamp = null` between workouts.
 
-### DEF-02: Destructive Actions Lack User Confirmation (Medium Severity)
-- **Status**: Identified during UI audit.
-- **Location**: [`src/app/index.tsx`](file:///c:/KISHAN/SOURCECODE/AI/Run/src/app/index.tsx) & [`src/components/RunHistoryModal.tsx`](file:///c:/KISHAN/SOURCECODE/AI/Run/src/components/RunHistoryModal.tsx)
-- **Description**: Tapping FINISH on a paused workout or Clear History immediately executes without a confirmation prompt. Accidental taps can lose runs or wipe all history.
-- **Resolution Plan**: Scheduled as Task **P1-T7**. Add `Alert.alert` confirmation modals before terminating active runs or clearing historical cache.
+### DEF-02: Destructive Actions Lack User Confirmation (RESOLVED)
+- **Status**: **RESOLVED** (Phase 1, Commit pending)
+- **Fix**:
+  - Tapping `FINISH` on the paused HUD triggers a native `Alert.alert` with "Keep Running" vs "Finish".
+  - Tapping `Clear History Cache` triggers a confirmation alert before wiping history.
+  - Deleting an individual run triggers a confirmation alert naming the specific workout.
 
 ---
 
-## 2. Infrastructure & Upstream Blockers
-- **None at present**: Repository dependencies, TypeScript strict checks, and ESLint configurations are healthy.
+## 2. Active Blockers
+- **None**: All static checks, tests, and builds are clean.

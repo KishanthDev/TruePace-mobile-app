@@ -1,4 +1,4 @@
-import { GpsCoordinate } from '../types/tracking';
+import type { GpsCoordinate } from '../types/tracking';
 
 const EARTH_RADIUS_METERS = 6371000;
 export const GPS_ACCURACY_THRESHOLD_METERS = 15; // Preferred GPS horizontal accuracy threshold (meters)

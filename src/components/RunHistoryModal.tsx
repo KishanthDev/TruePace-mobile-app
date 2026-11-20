@@ -5,10 +5,11 @@ import {
   Text,
   FlatList,
   TouchableOpacity,
+  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RunSummary } from '../types/tracking';
-import { getRunHistory, clearRunHistory } from '../utils/storage';
+import { getRunHistory, clearRunHistory, deleteRun } from '../utils/storage';
 import { formatDistanceKm, formatDuration, formatPace } from '../utils/geo';
 
 interface RunHistoryModalProps {
@@ -37,9 +38,42 @@ export const RunHistoryModal: React.FC<RunHistoryModalProps> = ({
     };
   }, [visible]);
 
-  const handleClear = async () => {
-    await clearRunHistory();
-    setRuns([]);
+  const handleDeleteRun = (run: RunSummary) => {
+    Alert.alert(
+      'Delete Workout?',
+      `Are you sure you want to delete the ${formatDistanceKm(run.distanceMeters)} KM run from ${formatDate(run.startTime)}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            const success = await deleteRun(run.id);
+            if (success) {
+              setRuns((prev) => prev.filter((r) => r.id !== run.id));
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleClear = () => {
+    Alert.alert(
+      'Clear All History?',
+      'Are you sure you want to permanently erase your entire run history? This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear All',
+          style: 'destructive',
+          onPress: async () => {
+            await clearRunHistory();
+            setRuns([]);
+          },
+        },
+      ]
+    );
   };
 
   const formatDate = (timestamp: number) => {
@@ -94,10 +128,46 @@ export const RunHistoryModal: React.FC<RunHistoryModalProps> = ({
                     <Text className="text-xs font-semibold text-zinc-400">
                       {formatDate(item.startTime)}
                     </Text>
-                    <Text className="text-xs font-bold text-emerald-400">
-                      {formatDistanceKm(item.distanceMeters)} KM
-                    </Text>
+                    <View className="flex-row items-center gap-2">
+                      <Text className="text-xs font-bold text-emerald-400">
+                        {formatDistanceKm(item.distanceMeters)} KM
+                      </Text>
+                      <TouchableOpacity
+                        onPress={() => handleDeleteRun(item)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        className="px-2 py-0.5 rounded bg-zinc-800/80"
+                      >
+                        <Text className="text-[10px] font-semibold text-zinc-400">Delete</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
+
+                  {/* Badges row: Consistency, Negative split, PR */}
+                  {(item.consistencyScore !== undefined || item.isNegativeSplit || (item.newRecords && item.newRecords.length > 0)) && (
+                    <View className="flex-row flex-wrap gap-1.5 mb-2.5">
+                      {item.consistencyScore !== undefined && (
+                        <View className="px-2 py-0.5 rounded bg-zinc-800 border border-zinc-700/60">
+                          <Text className="text-[9px] font-bold text-zinc-300">
+                            PACE {item.consistencyScore}% • {item.consistencyLabel?.toUpperCase()}
+                          </Text>
+                        </View>
+                      )}
+                      {item.isNegativeSplit && (
+                        <View className="px-2 py-0.5 rounded bg-emerald-950/50 border border-emerald-500/40">
+                          <Text className="text-[9px] font-extrabold text-emerald-400">
+                            NEGATIVE SPLIT
+                          </Text>
+                        </View>
+                      )}
+                      {item.newRecords && item.newRecords.length > 0 && (
+                        <View className="px-2 py-0.5 rounded bg-amber-950/50 border border-amber-500/40">
+                          <Text className="text-[9px] font-extrabold text-amber-400">
+                            RECORD SET
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                  )}
 
                   <View className="flex-row justify-between pt-2 border-t border-zinc-800/50">
                     <View>

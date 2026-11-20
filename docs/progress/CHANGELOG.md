@@ -1,48 +1,46 @@
 # TruePace — Engineering Changelog
 
+## [Phase 1 Complete] — 2026-11-20
+
+### Fixed
+- **DEF-01 (High Severity)**: Fixed GPS stream loss on cold-restored paused sessions:
+  - `resumeRun()` now explicitly awaits and verifies both foreground watch and background location tasks are running.
+  - `restoreActiveSession()` starts foreground watch when restored in `paused` state so satellite lock status is immediately visible.
+  - `resetRun()` cleans `lastProcessedTimestamp = null` between sessions.
+- **DEF-02 (Medium Severity)**: Added accidental tap confirmation modals:
+  - Tapping `FINISH` on paused HUD prompts runner with "Keep Running" vs "Finish".
+  - Tapping `Clear History Cache` requires explicit confirmation before wiping all records.
+  - Individual run deletion triggers a confirmation alert naming the specific workout.
+
+### Added
+- **Zero-Dependency Native Automated Test Suite**:
+  - Implemented Node 22 native test runner with experimental type stripping (`npm test`).
+  - `scripts/register.mjs` and `scripts/test-hooks.mjs` for seamless ESM TypeScript module resolution.
+  - `tests/geo.test.ts`: 15 comprehensive unit tests covering Haversine distance, GPS accuracy validation, Doppler speed-to-pace conversion, average pace calculations, and duration/distance string formatters.
+  - `tests/analytics.test.ts`: 13 comprehensive unit tests covering Pace Consistency Index (PCI), Negative Split detection, and Personal Records evaluation.
+  - 28/28 tests passing in ~600ms.
+- **Intelligent Local Running Analytics (`src/utils/analytics.ts`)**:
+  - `calculatePaceConsistency`: Computes normalized Pace Consistency Index (0–100) from kilometer split times and assigns qualitative labels ('Metronomic', 'Consistent', 'Varied', 'Erratic').
+  - `isNegativeSplit`: Detects genuine negative splits (second half faster than first half by $\ge 1.5\text{s/km}$).
+  - `evaluatePersonalRecords`: Detects all-time records for fastest 1K, fastest 5K, fastest 10K, longest distance, and longest duration.
+- **Storage Layer Hardening & Individual Run Deletion (`src/utils/storage.ts`)**:
+  - Added `deleteRun(id: string)` for individual workout removal.
+  - Added `getPersonalRecords()` and `savePersonalRecords()`.
+  - Added defensive validation on `getRunHistory()` to filter out corrupted storage items.
+  - Automatically enriches saved runs with consistency scores, negative split flags, and record achievements.
+- **UI & Accessibility Enhancements**:
+  - `RunHistoryModal.tsx`: Added individual "Delete" action button per card, and badges for Consistency Score, Negative Split, and Record Set.
+  - `index.tsx`: Rendered intelligent analytics badges on the completed run summary screen.
+
+---
+
 ## [Phase 0 Complete] — 2026-11-20
 
 ### Added
-- **`CLAUDE.md`**: Project-level operating instructions, architectural rules, and CLI validation commands.
-- **Product Documentation**:
-  - `docs/PRODUCT_VISION.md`: Core philosophy, pillars, target audience, and non-goals.
-  - `docs/PRODUCT_REQUIREMENTS.md`: Formal PRD with functional and non-functional specifications.
-  - `docs/CURRENT_STATE.md`: Technical audit of 15 TypeScript files, code volume (2,108 lines), and verified features.
-  - `docs/ROADMAP.md`: Dependency-aware 6-phase evolution roadmap from foundation to advanced intelligence.
-- **Architecture Documentation**:
-  - `docs/architecture/SYSTEM_ARCHITECTURE.md`: Mermaid flowcharts and layer responsibilities.
-  - `docs/architecture/TRACKING_ENGINE.md`: 7-stage stateful acceptance pipeline and mathematical formulas.
-  - `docs/architecture/DATA_ARCHITECTURE.md`: Storage keys, schema versioning, and migration strategy.
-  - `docs/architecture/AI_ARCHITECTURE.md`: Hybrid deterministic / asynchronous AI design and privacy shield.
-  - `docs/architecture/SECURITY_AND_PRIVACY.md`: Threat model, coordinate protection, and platform permissions.
-  - `docs/architecture/PERFORMANCE_BUDGETS.md`: CPU, battery, memory, and APK size thresholds.
-  - `docs/architecture/ADR/ADR-001-deterministic-tracking-hybrid-ai.md`: Architectural decision on core determinism.
-- **Feature Specifications (27-Point Standard)**:
-  - `docs/specifications/README.md`: Specifications index and standards.
-  - `docs/specifications/SPEC-001-intelligent-analytics.md`: Local analytics, PCI, and personal records.
-  - `docs/specifications/SPEC-002-adaptive-training-coach.md`: Post-run AI coaching and recovery insights.
-  - `docs/specifications/SPEC-003-interval-training.md`: Target pace delta HUD and interval workouts.
-  - `docs/specifications/SPEC-004-route-intelligence.md`: Route breadcrumbs and elevation profiles.
-  - `docs/specifications/SPEC-005-running-performance-insights.md`: ACWR workload and race time predictions.
-  - `docs/specifications/SPEC-006-data-export-and-integrations.md`: GPX/TCX file export and Strava integration.
-- **Quality & Validation Framework**:
-  - `docs/quality/TEST_STRATEGY.md`: 4-tier testing strategy.
-  - `docs/quality/REGRESSION_MATRIX.md`: 12 critical regression test scenarios.
-  - `docs/quality/DEVICE_VALIDATION.md`: Platform checklists for Android and iOS.
-  - `docs/quality/PERFORMANCE_VALIDATION.md`: Automated measurement guidelines.
-- **Autonomous Agent Protocols**:
-  - `docs/agents/AGENT_ARCHITECTURE.md`: 6 specialized engineering roles.
-  - `docs/agents/AGENT_RULES.md`: Non-negotiable operating rules.
-  - `docs/agents/EXECUTION_PROTOCOL.md`: Task lifecycle and session startup routine.
-  - `docs/agents/HANDOFF_PROTOCOL.md`: Audit checklist and state handoff standards.
-- **Progress Tracking Framework**:
-  - `docs/progress/PROGRESS.md`: Phase status and granular task tracker.
-  - `docs/progress/DECISIONS.md`: Architectural decisions log (DEC-001 through DEC-004).
-  - `docs/progress/BLOCKERS.md`: Identified defects (DEF-01 and DEF-02).
-  - `docs/progress/CHANGELOG.md`: Detailed engineering log.
-
-### Audited & Verified
-- Audited all 14 reported core features in the codebase.
-- Verified TypeScript strict typecheck (0 errors) and ESLint (0 errors).
-- Discovered and documented high-severity defect DEF-01 (restored paused sessions losing GPS stream).
-- Established zero-test baseline and planned Phase 1 test harness setup.
+- `CLAUDE.md`: Project-level operating instructions and CLI commands.
+- Product Documentation: `PRODUCT_VISION.md`, `PRODUCT_REQUIREMENTS.md`, `CURRENT_STATE.md`, `ROADMAP.md`.
+- Architecture Documentation: `SYSTEM_ARCHITECTURE.md`, `TRACKING_ENGINE.md`, `DATA_ARCHITECTURE.md`, `AI_ARCHITECTURE.md`, `SECURITY_AND_PRIVACY.md`, `PERFORMANCE_BUDGETS.md`, `ADR-001`.
+- Specifications: `SPEC-001` through `SPEC-006` in 27-point architectural format.
+- Quality Framework: `TEST_STRATEGY.md`, `REGRESSION_MATRIX.md`, `DEVICE_VALIDATION.md`, `PERFORMANCE_VALIDATION.md`.
+- Autonomous Agent Protocols: `AGENT_ARCHITECTURE.md`, `AGENT_RULES.md`, `EXECUTION_PROTOCOL.md`, `HANDOFF_PROTOCOL.md`.
+- Progress Tracking: `PROGRESS.md`, `DECISIONS.md`, `BLOCKERS.md`, `CHANGELOG.md`.

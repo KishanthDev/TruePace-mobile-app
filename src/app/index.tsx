@@ -4,6 +4,7 @@ import {
   Text,
   TouchableOpacity,
   ScrollView,
+  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRunTracker } from '../hooks/useRunTracker';
@@ -35,6 +36,17 @@ export default function RunHudScreen() {
 
   const [historyVisible, setHistoryVisible] = useState(false);
   const [gpsModalVisible, setGpsModalVisible] = useState(false);
+
+  const handleFinishPrompt = () => {
+    Alert.alert(
+      'Finish Run?',
+      'Are you sure you want to end your current workout?',
+      [
+        { text: 'Keep Running', style: 'cancel' },
+        { text: 'Finish', style: 'destructive', onPress: finishRun },
+      ]
+    );
+  };
 
   const {
     status,
@@ -143,9 +155,36 @@ export default function RunHudScreen() {
             <Text className="text-6xl font-black text-white tracking-tighter">
               {formatDistanceKm(lastFinishedRun.distanceMeters)}
             </Text>
-            <Text className="text-sm font-bold text-zinc-400 uppercase tracking-widest mb-8">
+            <Text className="text-sm font-bold text-zinc-400 uppercase tracking-widest mb-4">
               KILOMETERS
             </Text>
+
+            {/* Intelligent Analytics Badges */}
+            {(lastFinishedRun.consistencyScore !== undefined || lastFinishedRun.isNegativeSplit || (lastFinishedRun.newRecords && lastFinishedRun.newRecords.length > 0)) && (
+              <View className="flex-row flex-wrap justify-center gap-2 mb-6 px-2">
+                {lastFinishedRun.consistencyScore !== undefined && (
+                  <View className="px-3 py-1 rounded-full bg-zinc-900 border border-zinc-700/60">
+                    <Text className="text-xs font-bold text-zinc-300">
+                      PACE {lastFinishedRun.consistencyScore}% • {lastFinishedRun.consistencyLabel?.toUpperCase()}
+                    </Text>
+                  </View>
+                )}
+                {lastFinishedRun.isNegativeSplit && (
+                  <View className="px-3 py-1 rounded-full bg-emerald-950/60 border border-emerald-500/50">
+                    <Text className="text-xs font-black text-emerald-400">
+                      NEGATIVE SPLIT
+                    </Text>
+                  </View>
+                )}
+                {lastFinishedRun.newRecords && lastFinishedRun.newRecords.length > 0 && (
+                  <View className="px-3 py-1 rounded-full bg-amber-950/60 border border-amber-500/50">
+                    <Text className="text-xs font-black text-amber-400">
+                      PERSONAL RECORD
+                    </Text>
+                  </View>
+                )}
+              </View>
+            )}
 
             <View className="w-full flex-row justify-around py-6 rounded-3xl bg-zinc-950 border border-zinc-900">
               <View className="items-center">
@@ -343,7 +382,7 @@ export default function RunHudScreen() {
                 label="FINISH"
                 variant="danger"
                 size="medium"
-                onPress={finishRun}
+                onPress={handleFinishPrompt}
               />
             </View>
           )}

@@ -52,6 +52,10 @@ export interface RunSummary {
   bestPaceSecondsPerKm: number | null;
   maxSpeedMps: number;
   splits?: number[]; // Per-km split times in seconds (splits[0] = time for km 1, etc.)
+  consistencyScore?: number; // Pace Consistency Index (0 to 100)
+  consistencyLabel?: string; // 'Metronomic' | 'Consistent' | 'Varied' | 'Erratic'
+  isNegativeSplit?: boolean; // Second half faster than first half
+  newRecords?: string[]; // Personal record badges earned in this run
 }
 
 export interface TrackingTelemetry {
